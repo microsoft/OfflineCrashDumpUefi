@@ -1,0 +1,40 @@
+[Defines]
+  DEC_SPECIFICATION = 0x00010005
+  PACKAGE_NAME      = OfflineDumpPkg
+  PACKAGE_GUID      = 15527d2d-3f0a-4ca4-9d0b-986c084e20b0
+  PACKAGE_VERSION   = 0.1
+
+[Includes]
+  Include
+
+[Includes.Common.Private]
+  Private
+
+[LibraryClasses]
+  OfflineDumpLib|Include/Library/OfflineDumpLib.h
+
+[Guids]
+
+  ## Include/Guid/OfflineDumpConfig.h
+  ## Table used to pass information from the firmware to the OS. {3804CF02-8538-11E2-8847-8DF16088709B}
+  gOfflineDumpConfigurationTableGuid  = { 0x3804CF02, 0x8538, 0x11E2, { 0x88, 0x47, 0x8D, 0xF1, 0x60, 0x88, 0x70, 0x9B }}
+
+  ## Include/Guid/OfflineDumpConfig.h
+  ## Vendor for firmware variables set by the OS. {77fa9abd-0359-4d32-bd60-28f4e78f784b}
+  gOfflineDumpVendorGuid              = { 0x77fa9abd, 0x0359, 0x4d32, { 0xBD, 0x60, 0x28, 0xf4, 0xe7, 0x8f, 0x78, 0x4b }}
+
+  ## Include/Guid/OfflineDumpConfig.h
+  ## Partition type GUID for the offline dump partition. {66C9B323-F7FC-48B6-BF96-6F32E335A428}
+  gOfflineDumpPartitionTypeGuid       = { 0x66C9B323, 0xF7FC, 0x48B6, { 0xBF, 0x96, 0x6F, 0x32, 0xE3, 0x35, 0xA4, 0x28 }}
+
+  ## Offline dump package token space GUID. {8CF239A2-DEC2-458C-A641-6AED5EDE406B}
+  gOfflineDumpTokenSpaceGuid          = { 0x8cf239a2, 0xdec2, 0x458c, { 0xa6, 0x41, 0x6a, 0xed, 0x5e, 0xde, 0x40, 0x6b }}
+
+[PcdsFixedAtBuild]
+
+  ## Offline dump block device identification strategry:
+  ## FALSE: Expect 1 raw block device and use it. (Good for testing in emulator.)
+  ## TRUE: Expect 1 GPT partition with Type = OffDmp. (Good for normal usage.)
+  gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition|TRUE|BOOLEAN|0x00001001
+
+[Protocols]

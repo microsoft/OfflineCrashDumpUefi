@@ -1,0 +1,36 @@
+[Defines] 
+
+  INF_VERSION                    = 0x00010005
+  UEFI_SPECIFICATION_VERSION     = 0x0002001E
+  BASE_NAME                      = OfflineDumpApp
+  VERSION_STRING                 = 0.1
+  FILE_GUID                      = 813959c1-07bf-4a21-97eb-765f853acae1
+  MODULE_TYPE                    = UEFI_APPLICATION
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+
+  OfflineDumpApp.c
+
+[Packages]
+
+  OfflineDumpPkg/OfflineDumpPkg.dec
+
+  CryptoPkg/CryptoPkg.dec
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+
+  OfflineDumpLib
+
+  PcdLib
+  UefiApplicationEntryPoint
+  UefiLib
+
+[Protocols]
+
+  gEfiDiskIo2ProtocolGuid           ## CONSUMES
+  gEfiPartitionInfoProtocolGuid     ## CONSUMES
+
+[Pcd]
+  gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition #CONSUMES

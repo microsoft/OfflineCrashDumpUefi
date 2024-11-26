@@ -1,0 +1,299 @@
+/*
+Microsoft Offline Dump - Functions for writing dump data to a block device.
+
+PRELIMINARY DESIGN:
+
+Current goal is just to get to the point of "valid benchmarks".
+
+- This probably generates invalid dump files.
+- This is not the intended final interface. Current interface is intended to simplify
+  development and testing. Intended final interface is a single function,
+  OfflineDumpWrite(pConfigurationProtocol).
+
+Consumes:
+
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  SynchronizationLib
+  UefiBootServicesTableLib
+
+  BaseCryptLib
+  OpensslLib
+*/
+
+#ifndef _included_Library_OfflineDumpWriter_h
+#define _included_Library_OfflineDumpWriter_h
+
+#include <Uefi/UefiBaseType.h>
+#include <Guid/OfflineDumpHeaders.h>
+
+// Forward decaration of the opaque DUMP_WRITER object.
+typedef struct DUMP_WRITER DUMP_WRITER;
+
+// Options for adjusting the behavior of DumpWriter.
+typedef struct DUMP_WRITER_OPTIONS {
+  // If false, use BLOCK_IO_PROTOCOL only if BLOCK_IO2_PROTOCOL is not supported.
+  // If true, always use BLOCK_IO_PROTOCOL.
+  BOOLEAN    DisableBlockIo2;
+
+  // If false, use OfflineMemoryDumpEncryptionAlgorithm variable to determine encryption.
+  // If true, ignore OfflineMemoryDumpEncryptionAlgorithm and always write an unencrypted dump.
+  BOOLEAN    ForceUnencrypted;
+
+  // Number of buffers to use for async I/O. Significant only if the device supports
+  // async I/O (EFI_BLOCK_IO2_PROTOCOL).
+  //
+  // - If this is 0, a default value will be selected.
+  // - If this is 1, it will be set to 2.
+  // - If async I/O is not supported by the device, this will be ignored. The writer will
+  //   use one large buffer for writing data and a smaller buffer for writing headers.
+  UINT8    BufferCount;
+
+  // Maximum total bytes to allocate for the dump writer's I/O buffers (soft limit).
+  //
+  // This is used to determine
+  //
+  //   BufferSize = RoundDownToBlockSize(BufferMemoryLimit / BufferCount).
+  //
+  // - If this is 0, a default value will be selected.
+  // - If this is less than BlockSize * BufferCount, it will be set to
+  //   BlockSize * BufferCount.
+  //
+  // Note this does not cap total memory usage of the writer. The dump writer also
+  // allocates other memory, e.g. it allocates SectionCountExpected * 64 bytes to track
+  // section headers.
+  UINT32    BufferMemoryLimit;
+} DUMP_WRITER_OPTIONS;
+
+// Finalizes the dump and deletes the dump writer.
+// May block on write operations (writing headers, flushing blocks).
+//
+// This method does the following:
+//
+// 1. Flushes any pending data.
+// 2. Waits for all pending I/O operations to complete.
+// 3. Updates dump header Flags field:
+//    - If DumpWriterLastError() != 0, does not modify the header flags (dump invalid).
+//    - Else if DumpWriterHasInsufficientStorage(), sets the INSUFFICIENT_STORAGE flag.
+//    - Else if DumpValid, sets the DUMP_VALID flag.
+//    - Else does not modify the header flags (dump invalid).
+// 4. Status = FlushHeaders() && pBlockIo->FlushBlocks().
+// 5. Deletes pDumpWriter.
+// 6. Returns Status.
+EFI_STATUS
+DumpWriterClose (
+  IN OUT DUMP_WRITER  *pDumpWriter,
+  IN BOOLEAN          DumpValid
+  );
+
+// Creates a new DUMP_WRITER object for writing a dump to the specified device.
+// May block on a write operation (writing headers).
+//
+// DumpDeviceHandle: must support either EFI_BLOCK_IO_PROTOCOL or EFI_BLOCK_IO2_PROTOCOL.
+//      EFI_BLOCK_IO2_PROTOCOL is preferred (supports async I/O, improves performance).
+//      This device will usually be a partition handle.
+//
+// DumpHeaderFlags: flags for the dump header. This must not include the DUMP_VALID or
+//      INSUFFICIENT_STORAGE flags (they are managed automatically by the writer).
+//
+// SectionCountExpected: the maximum number of sections that can be written to the dump.
+//      This is used to pre-allocate space for the section headers. It is ok if the
+//      actual number of sections written is less than this.
+//
+// This method does the following:
+//
+// 1. Reads dump settings from UEFI variables: OfflineMemoryDumpOsData,
+//    OfflineMemoryDumpEncryptionAlgorithm, OfflineMemoryDumpEncryptionPublicKey.
+// 2. Validate settings (i.e. fail if encryption algorithm is not supported or if
+//    certificate cannot be parsed).
+// 3. Verifies that the device supports EFI_BLOCK_IO2_PROTOCOL or EFI_BLOCK_IO_PROTOCOL.
+// 4. Allocates buffers.
+// 5. Writes initial dump headers to dump device (DUMP_VALID flag not set).
+//
+// If an error is encountered, sets *ppDumpWriter == NULL and returns an error status.
+// Otherwise, sets *ppDumpWriter to the new DUMP_WRITER object and returns success.
+EFI_STATUS
+DumpWriterOpen (
+  IN EFI_HANDLE                 DumpDeviceHandle,
+  IN RAW_DUMP_HEADER_FLAGS      DumpHeaderFlags,
+  IN UINT32                     SectionCountExpected,
+  IN DUMP_WRITER_OPTIONS const  *pOptions OPTIONAL,
+  OUT DUMP_WRITER               **ppDumpWriter
+  );
+
+// If any block write operations have failed, returns the error status of the most
+// recent failure. Otherwise, returns EFI_SUCCESS.
+//
+// Note that DumpWriterClose() will automatically mark the dump as "invalid" if any block
+// write operations fail.
+EFI_STATUS
+DumpWriterLastWriteError (
+  IN DUMP_WRITER const  *pDumpWriter
+  );
+
+// Returns the device position to which the next DumpWriterWriteSectionData() will write.
+// This is not the same as the raw dump offset -- this value includes the size of the
+// encryption header (if any). This may be larger than DumpWriterMediaSize() if the
+// device is too small for the written data.
+UINT64
+DumpWriterMediaPosition (
+  IN DUMP_WRITER const  *pDumpWriter
+  );
+
+// Returns the size of the device.
+UINT64
+DumpWriterMediaSize (
+  IN DUMP_WRITER const  *pDumpWriter
+  );
+
+// Returns true if the dump writer has run out of storage space, i.e. returns
+// DumpWriterMediaSize() < DumpWriterMediaPosition().
+//
+// Note that DumpWriterClose() will automatically mark the dump as "insufficient storage"
+// if this is true.
+//
+// Note that caller should still write the rest of the sections to the dump so that the
+// TotalDumpSizeRequired field can be calculated correctly.
+BOOLEAN
+DumpWriterHasInsufficientStorage (
+  IN DUMP_WRITER const  *pDumpWriter
+  );
+
+// Gets the dump header.
+// Caller should not modify the header. The header fields are managed automatically by
+// the writer.
+RAW_DUMP_HEADER const *
+DumpWriterGetDumpHeader (
+  IN DUMP_WRITER const  *pDumpWriter
+  );
+
+// Flushes the current dump headers to the dump device.
+// May block on a write operation.
+//
+// Headers will be written automatically as part of DumpWriterClose(), but you may call
+// this method at other times to save progress in case dump is interrupted.
+//
+// This is a best-effort method because the headers will be written again as part of
+// DumpWriterClose(). An error in DumpWriterFlushHeaders() will not affect
+// DumpWriterLastWriteError() and will not invalidate the dump.
+//
+// Returns a status code indicating whether the headers were flushed.
+EFI_STATUS
+DumpWriterFlushHeaders (
+  IN OUT DUMP_WRITER  *pDumpWriter
+  );
+
+// Callback to use for reading the section data, e.g. to access fenced memory regions.
+//
+// pDestinationPos: destination buffer for the data. Buffer has room for Size bytes.
+//     Important: Copy to pDestinationPos[0..Size]. Do not add Offset to this pointer.
+//
+// pDataStart: The value of the pDataStart parameter that was passed to
+//     DumpWriterWriteSection.
+//
+// Offset: offset into the section. This will always be less than the DataSize parameter
+//     that was passed to DumpWriterWriteSection. This will always be a multiple of 16.
+//
+// Size: number of bytes to read. Offset + Size will always be less than or equal to the
+//     DataSize parameter that was passed to DumpWriterWriteSection. Size will always be
+//     a multiple of 16 unless DataSize was not, in which case the final call to this
+//     callback will have a Size that is not a multiple of 16 (to read the last bytes).
+//
+// Returns: EFI_SUCCESS on success, or error code if copy failed. An error will cause
+//     copying to stop, section to be marked as invalid, dump to be marked as invalid.
+//
+// Section data will be copied by code that looks approximately like this:
+//
+// for (UINTN Offset = 0; Offset < DataSize; Offset += sizeof(DestinationBuffer)) {
+//   UINTN Size = MIN(DataSize - Offset, sizeof(DestinationBuffer));
+//   if (!pDataCallback) {
+//      CopyMem(DestinationBuffer, pDataStart + Offset, Size);
+//   } else {
+//      Status = pDataCallback(DestinationBuffer, pDataStart, Offset, Size);
+//      if (EFI_ERROR(Status)) {
+//        Section->Flags &= ~RAW_DUMP_SECTION_HEADER_DUMP_VALID; // Mark section as invalid.
+//        Section->Size = Offset; // Set section size to the last successfully-copied offset.
+//        pDumpWriter->LastWriteError = Status; // Dump will be marked invalid.
+//        break; // Stop copying section data.
+//      }
+//   }
+//   AppendToDump(DestinationBuffer, Size);
+// }
+//
+typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
+                                                      OUT UINT8      *pDestinationPos,
+                                                      IN void const  *pDataStart,
+                                                      IN UINTN       Offset,
+                                                      IN UINTN       Size
+                                                      );
+
+// Fills in the header and writes the data for the next section.
+// May block on a write operation (writing section data).
+//
+// Flags: flags for the section header.
+//
+//   - This MUST NOT include the INSUFFICIENT_STORAGE flag because that flag is managed
+//     automatically by the writer.
+//   - This should usually include the DUMP_VALID flag to mark the section as valid. (The
+//     dump writer may remove the DUMP_VALID flag if an error occurs while copying the
+//     section data.)
+//
+// MajorVersion, MinorVersion: version of the section data structure, usually { 1, 0 }.
+//
+// Type: type of the section.
+//
+// pInformation: information for the section header. The active field is selected by Type.
+//
+// pName: name of the section. Must be a null-terminated string. If the name is longer
+//      than 20 characters, it will be truncated.
+//
+// pDataCallback: Callback to use for reading the section data. If NULL, the section data
+//      will be copied directly. If non-NULL, the callback will be invoked as:
+//
+//      Status = pDataCallback(pDestinationPos, pDataStart, Offset, Size);
+//
+// pDataStart: start of the section data. If pDataCallback is NULL, this is a pointer to
+//      the section data. If pDataCallback is non-NULL, this is an opaque value that will
+//      be passed to the callback.
+//
+// DataSize: size of the section data in bytes.
+//
+// Returns:
+//
+//   - error for invalid parameter or if SectionCountExpected sections have already
+//     been written.
+//   - success otherwise. Returns success even if there is insufficient storage to write
+//     the data or if an error occurs while copying or writing the data. Check
+//     DumpWriterLastWriteError() and DumpWriterHasInsufficientStorage() to determine if
+//     one of those conditions occurred.
+//
+// This method does the following:
+//
+// 1. Fills in the section header as described by the parameters.
+// 2. Writes the section data to the dump device.
+// 3. If there was not enough space to write the section data, sets the
+//    INSUFFICIENT_STORAGE flag in the dump header and clears the DUMP_VALID flag.
+// 4. If an error was returned by the callback while copying section data, clears the
+//    DUMP_VALID flags in the section header and dump header.
+// 5. Updates the dump header TotalDumpSizeRequired, DumpSize, SectionsCount fields.
+//
+// This does not flush the updated headers to disk. Headers will be flushed to disk as
+// part of DumpWriterClose(), or you may call DumpWriterFlushHeaders() to save progress
+// in case the dump is interrupted.
+EFI_STATUS
+DumpWriterWriteSection (
+  IN OUT DUMP_WRITER                     *pDumpWriter,
+  IN RAW_DUMP_SECTION_HEADER_FLAGS       SectionHeaderFlags,
+  IN UINT16                              MajorVersion,
+  IN UINT16                              MinorVersion,
+  IN RAW_DUMP_SECTION_TYPE               Type,
+  IN RAW_DUMP_SECTION_INFORMATION const  *pInformation,
+  IN CHAR8 const                         *pName,
+  IN DUMP_WRITER_COPY_CALLBACK           *pDataCallback OPTIONAL,
+  IN void const                          *pDataStart,
+  IN UINTN                               DataSize
+  );
+
+#endif // _included_Library_OfflineDumpWriter_h
