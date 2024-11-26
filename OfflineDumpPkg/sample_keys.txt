@@ -1,0 +1,7 @@
+sample_keys.cer contains a sample self-signed certificate (public key).
+
+sample_keys.pfx contains the corresponding private key (password abc123).
+
+encvars.nsh will install the sample certificate and will configure the system
+to generate encrypted dumps using that certificate. The resulting dumps can
+be decrypted using the sample_keys.pfx private key.

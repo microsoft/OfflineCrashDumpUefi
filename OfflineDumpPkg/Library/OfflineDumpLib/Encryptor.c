@@ -23,7 +23,7 @@ Almost-useful functions from BaseCryptLib.h:
 - RsaOaepEncrypt
 - RandomBytes
 
-To be able to use BaseCryptLib.h instead of <openssl/*.h>, we need:
+To be able to use BaseCryptLib.h instead of <openssl/???.h>, we need:
 
 - AesEcbEncrypt (with ASM optimizations)
 - Pkcs7Encrypt

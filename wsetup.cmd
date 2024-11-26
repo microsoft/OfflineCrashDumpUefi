@@ -4,12 +4,12 @@ pushd %~dp0
 set PYTHON_COMMAND=python.exe
 
 if not exist edk2\edksetup.bat (
-    echo git submodules not updated. Run: git submodule update --init --recursive
+    echo git submodules not updated in ROOT. Run: "git submodule update --init" in ROOT and in ROOT\edk2.
     goto :exit
 )
 
 if not exist edk2\BaseTools\Source\C\BrotliCompress\brotli\c\common\constants.h (
-    echo git submodules not recursed. Run: git submodule update --init --recursive
+    echo git submodules not updated in EDK2. Run: "git submodule update --init" in ROOT\edk2.
     goto :exit
 )
 

@@ -4,6 +4,7 @@
 #include <Uefi.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/UefiLib.h>
@@ -18,50 +19,13 @@ LocateDumpDevice (
   )
 {
   EFI_STATUS  Status;
-  UINT32      BlockDeviceCount  = 0;
   EFI_HANDLE  BlockDeviceHandle = NULL;
 
   if (PcdGetBool (PcdDmpUsePartition)) {
     // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
-    EFI_HANDLE  *pHandleBuffer = NULL;
-    UINTN       HandleCount    = 0;
-    Status = gBS->LocateHandleBuffer (
-                                      ByProtocol,
-                                      &gEfiPartitionInfoProtocolGuid,
-                                      NULL,
-                                      &HandleCount,
-                                      &pHandleBuffer
-                                      );
+    Status = GetOfflineDumpPartitionHandle (&BlockDeviceHandle);
     if (EFI_ERROR (Status)) {
-      Print (L"LocateHandleBuffer(PartitionInfoProtocol) failed (%r)\n", Status);
-      goto Done;
-    } else {
-      for (UINTN HandleIndex = 0; HandleIndex != HandleCount; HandleIndex += 1) {
-        EFI_PARTITION_INFO_PROTOCOL  *PartitionInfo = NULL;
-        Status = gBS->OpenProtocol (
-                                    pHandleBuffer[HandleIndex],
-                                    &gEfiPartitionInfoProtocolGuid,
-                                    (VOID **)&PartitionInfo,
-                                    ImageHandle,
-                                    NULL,
-                                    EFI_OPEN_PROTOCOL_GET_PROTOCOL
-                                    );
-        if (EFI_ERROR (Status)) {
-          Print (L"OpenProtocol(PartitionInfoProtocol) failed (%r) for device %u\n", Status, HandleIndex);
-          continue;
-        }
-
-        if (!PartitionIsSVRawDump (PartitionInfo)) {
-          continue;
-        }
-
-        BlockDeviceCount += 1;
-        BlockDeviceHandle = pHandleBuffer[HandleIndex];
-        Print (L"Partition %u is a usable dump target\n", HandleIndex);
-      }
-
-      FreePool (pHandleBuffer);
-      pHandleBuffer = NULL;
+      _DEBUG_PRINT (DEBUG_ERROR, "OD: GetOfflineDumpPartitionHandle() failed (%r)\n", Status);
     }
   } else {
     // For testing on Emulator: Look for raw block device that is not a partition.
@@ -75,8 +39,9 @@ LocateDumpDevice (
                                       &pHandleBuffer
                                       );
     if (EFI_ERROR (Status)) {
-      Print (L"LocateHandleBuffer(BlockIoProtocol) failed (%r)\n", Status);
+      _DEBUG_PRINT (DEBUG_ERROR, "OD: LocateHandleBuffer(BlockIoProtocol) failed (%r)\n", Status);
     } else {
+      UINT32  BlockDeviceCount = 0;
       for (UINTN HandleIndex = 0; HandleIndex != HandleCount; HandleIndex += 1) {
         EFI_PARTITION_INFO_PROTOCOL  *PartitionInfo = NULL;
         Status = gBS->OpenProtocol (
@@ -88,7 +53,7 @@ LocateDumpDevice (
                                     EFI_OPEN_PROTOCOL_GET_PROTOCOL
                                     );
         if (!EFI_ERROR (Status)) {
-          Print (L"OpenProtocol(PartitionInfoProtocol) succeeded for device %u, so not using it.\n", HandleIndex);
+          _DEBUG_PRINT (DEBUG_INFO, "OD: OpenProtocol(PartitionInfoProtocol) succeeded for device %p, so not using it.\n", pHandleBuffer[HandleIndex]);
           continue;
         }
 
@@ -96,25 +61,24 @@ LocateDumpDevice (
 
         BlockDeviceCount += 1;
         BlockDeviceHandle = pHandleBuffer[HandleIndex];
-        Print (L"Device %u is usable (raw device, not a partition)\n", HandleIndex);
+        _DEBUG_PRINT (DEBUG_INFO, "OD: Device %p is usable (raw device, not a partition)\n", pHandleBuffer[HandleIndex]);
       }
 
       FreePool (pHandleBuffer);
       pHandleBuffer = NULL;
+
+      if (1 == BlockDeviceCount) {
+        ASSERT (BlockDeviceHandle != NULL);
+        Status = EFI_SUCCESS;
+      } else {
+        _DEBUG_PRINT (DEBUG_ERROR, "OD: Expected 1 applicable block device, found %u\n", BlockDeviceCount);
+        BlockDeviceHandle = NULL;
+        Status            = EFI_NOT_FOUND;
+      }
     }
   }
 
-  if (1 != BlockDeviceCount) {
-    Print (L"Expected 1 applicable block device, found %u\n", BlockDeviceCount);
-    Status = EFI_NOT_FOUND;
-    goto Done;
-  }
-
-  Status = EFI_SUCCESS;
-
-Done:
-
-  *pBlockDeviceHandle = EFI_ERROR (Status) ? NULL : BlockDeviceHandle;
+  *pBlockDeviceHandle = BlockDeviceHandle;
   return Status;
 }
 
@@ -126,7 +90,6 @@ UefiMain (
   )
 {
   EFI_STATUS  Status;
-
   EFI_HANDLE  BlockDeviceHandle;
 
   Status = LocateDumpDevice (ImageHandle, &BlockDeviceHandle);

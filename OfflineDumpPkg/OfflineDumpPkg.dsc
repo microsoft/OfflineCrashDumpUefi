@@ -44,10 +44,6 @@
   UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
   DebugLib|MdePkg/Library/UefiDebugLibStdErr/UefiDebugLibStdErr.inf
 
-[PcdsFixedAtBuild]
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000040
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x1f
-
 [Components]
   OfflineDumpPkg/Application/OfflineDumpApp/OfflineDumpApp.inf
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
