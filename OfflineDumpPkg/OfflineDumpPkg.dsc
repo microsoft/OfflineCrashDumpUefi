@@ -38,7 +38,9 @@
 
 [LibraryClasses.AARCH64]
 
-  TimerLib            |ArmPkg/Library/ArmArchTimerLib/ArmArchTimerLib.inf
+  ArmGenericTimerCounterLib |ArmPkg/Library/ArmGenericTimerPhyCounterLib/ArmGenericTimerPhyCounterLib.inf
+  ArmLib                    |ArmPkg/Library/ArmLib/ArmBaseLib.inf
+  TimerLib                  |ArmPkg/Library/ArmArchTimerLib/ArmArchTimerLib.inf
 
 [LibraryClasses.IA32, LibraryClasses.X64]
 

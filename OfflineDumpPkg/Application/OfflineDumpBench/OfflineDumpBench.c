@@ -282,19 +282,19 @@ UefiMain (
 
   EFI_SHELL_PARAMETERS_PROTOCOL  *pShellParameters;
 
-  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, &pShellParameters);
+  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, (void**)&pShellParameters);
   if (EFI_ERROR (Status)) {
     Print (L"HandleProtocol(ShellParameters) failed (%r)\n", Status);
     return Status;
   }
 
-  UINTN                         Argc = pShellParameters->Argc;
-  CHAR16 const * const * const  Argv = pShellParameters->Argv;
-  if (Argc < 2) {
+  CHAR16 * const * const  Argv = pShellParameters->Argv;
+  UINTN                   Argc = pShellParameters->Argc;
+  UINTN                   ArgI = 1;
+  if (Argc <= ArgI) {
     return ShowUsage ();
   }
 
-  UINTN ArgI = 1;
   BOOLEAN        AllOk       = TRUE;
   UINT64 const   DumpSize    = StrToUint64 ("DumpSize", Argv[ArgI++], &AllOk);
   UINT32 const   BufferMem   = Argc <= ArgI ? 0u : StrToUint32 ("BufferMem", Argv[ArgI++], &AllOk);
