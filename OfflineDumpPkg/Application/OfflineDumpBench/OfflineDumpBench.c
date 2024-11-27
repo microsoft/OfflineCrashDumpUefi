@@ -260,6 +260,16 @@ StrToUint32 (
   return (UINT32)Value;
 }
 
+static EFI_STATUS
+ShowUsage (
+  void
+  )
+{
+  Print (L"Usage:   bench <DumpSize> [ <BufferMem> <BufferCount> <NoEncrypt> <NoAsync> ]\n");
+  Print (L"Example: bench 0x1000000   0x100000    8             0           0\n");
+  return EFI_INVALID_PARAMETER;
+}
+
 EFI_STATUS
 EFIAPI
 UefiMain (
@@ -270,28 +280,29 @@ UefiMain (
   EFI_STATUS  Status;
   EFI_HANDLE  BlockDeviceHandle;
 
-  EFI_SHELL_PARAMETERS_PROTOCOL  *ShellParameters;
+  EFI_SHELL_PARAMETERS_PROTOCOL  *pShellParameters;
 
-  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, &ShellParameters);
+  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, &pShellParameters);
   if (EFI_ERROR (Status)) {
     Print (L"HandleProtocol(ShellParameters) failed (%r)\n", Status);
     return Status;
   }
 
-  if (ShellParameters->Argc != 6) {
-    Print (L"Usage:   %s <NoAsync> <NoEncrypt> <BufferCount> <BufferMem> <DumpSize>\n", ShellParameters->Argv[0]);
-    Print (L"Example: %s 0         0           8             0x100000    0x1000000\n", ShellParameters->Argv[0]);
-    return EFI_INVALID_PARAMETER;
+  UINTN                         Argc = pShellParameters->Argc;
+  CHAR16 const * const * const  Argv = pShellParameters->Argv;
+  if (Argc < 2) {
+    return ShowUsage ();
   }
 
+  UINTN ArgI = 1;
   BOOLEAN        AllOk       = TRUE;
-  BOOLEAN const  NoAsync     = StrToBool ("NoAsync", ShellParameters->Argv[1], &AllOk);
-  BOOLEAN const  NoEncrypt   = StrToBool ("NoEncrypt", ShellParameters->Argv[2], &AllOk);
-  UINT8 const    BufferCount = StrToUint8 ("BufferCount", ShellParameters->Argv[3], &AllOk);
-  UINT32 const   BufferMem   = StrToUint32 ("BufferMem", ShellParameters->Argv[4], &AllOk);
-  UINT64 const   DumpSize    = StrToUint64 ("DumpSize", ShellParameters->Argv[5], &AllOk);
+  UINT64 const   DumpSize    = StrToUint64 ("DumpSize", Argv[ArgI++], &AllOk);
+  UINT32 const   BufferMem   = Argc <= ArgI ? 0u : StrToUint32 ("BufferMem", Argv[ArgI++], &AllOk);
+  UINT8 const    BufferCount = Argc <= ArgI ? 0u : StrToUint8 ("BufferCount", Argv[ArgI++], &AllOk);
+  BOOLEAN const  NoEncrypt   = Argc <= ArgI ? 0u : StrToBool ("NoEncrypt", Argv[ArgI++], &AllOk);
+  BOOLEAN const  NoAsync     = Argc <= ArgI ? 0u : StrToBool ("NoAsync", Argv[ArgI++], &AllOk);
   if (!AllOk) {
-    return EFI_INVALID_PARAMETER;
+    return ShowUsage ();
   }
 
   {
@@ -395,14 +406,14 @@ UefiMain (
     goto Done;
   }
 
-  UINT64 const  TimeEnd        = GetPerformanceCounter ();
-  UINT64 const  TimeMS         = GetTimeInNanoSecond (TimeEnd - TimeStart) / 1000000;
-  UINT64 const  BytesPerSecond = DumpSize * 1000 / TimeMS;
+  UINT64 const  TimeEnd            = GetPerformanceCounter ();
+  UINT64 const  TimeNS             = GetTimeInNanoSecond (TimeEnd - TimeStart);
+  UINT64 const  KilobytesPerSecond = DumpSize * (1000000000 / 1024) / (TimeNS ? TimeNS : 1);
   Print (
-         L"Time: %llu MS, 0x%llX bytes, 0x%llX bytes/sec\n",
-         (unsigned long long)TimeMS,
-         (unsigned long long)DumpSize,
-         (unsigned long long)BytesPerSecond
+         L"Results: %llu KB, %llu ms, %llu KB/sec\n",
+         (unsigned long long)(DumpSize / 1024),
+         (unsigned long long)(TimeNS / 1000000),
+         (unsigned long long)KilobytesPerSecond
          );
   Status = EFI_SUCCESS;
 

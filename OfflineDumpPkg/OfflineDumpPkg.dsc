@@ -11,41 +11,52 @@
 !include MdePkg/MdeLibs.dsc.inc
 
 [LibraryClasses]
+
+  # OfflineDumpPkg
+
   OfflineDumpLib      |OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
+
+  # MdePkg
 
   BaseLib             |MdePkg/Library/BaseLib/BaseLib.inf
   BaseMemoryLib       |MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
   DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
   DevicePathLib       |MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
-  #DxeServicesLib      |MdePkg/Library/DxeServicesLib/DxeServicesLib.inf
-  #DxeServicesTableLib |MdePkg/Library/DxeServicesTableLib/DxeServicesTableLib.inf
   MemoryAllocationLib |MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
-  PcdLib              |MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
-  #PeCoffGetEntryPointLib|MdePkg/Library/BasePeCoffGetEntryPointLib/BasePeCoffGetEntryPointLib.inf
-  #PerformanceLib      |MdePkg/Library/BasePerformanceLibNull/BasePerformanceLibNull.inf
+  PcdLib              |MdePkg/Library/DxePcdLib/DxePcdLib.inf
   PrintLib            |MdePkg/Library/BasePrintLib/BasePrintLib.inf
   RngLib              |MdePkg/Library/BaseRngLib/BaseRngLib.inf
-  #SafeIntLib          |MdePkg/Library/BaseSafeIntLib/BaseSafeIntLib.inf
-  TimerLib            |MdePkg/Library/BaseTimerLibNullTemplate/BaseTimerLibNullTemplate.inf
   UefiLib             |MdePkg/Library/UefiLib/UefiLib.inf
   UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
   UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
 
-  BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
-  OpensslLib  |CryptoPkg/Library/OpensslLib/OpensslLibAccel.inf
-  IntrinsicLib|CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
+  # CryptoPkg
+
+  BaseCryptLib        |CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
+  OpensslLib          |CryptoPkg/Library/OpensslLib/OpensslLibAccel.inf
+  IntrinsicLib        |CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
+
+[LibraryClasses.AARCH64]
+
+  TimerLib            |ArmPkg/Library/ArmArchTimerLib/ArmArchTimerLib.inf
+
+[LibraryClasses.IA32, LibraryClasses.X64]
+
+  TimerLib            |UefiCpuPkg/Library/CpuTimerLib/BaseCpuTimerLib.inf
 
 [LibraryClasses.common.UEFI_DRIVER]
+
   UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
-  DebugLib|MdePkg/Library/UefiDebugLibConOut/UefiDebugLibConOut.inf
-  ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
+  DebugLib            |MdePkg/Library/UefiDebugLibConOut/UefiDebugLibConOut.inf
+  ReportStatusCodeLib |MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
 
 [LibraryClasses.common.UEFI_APPLICATION]
+
   UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
-  DebugLib|MdePkg/Library/UefiDebugLibStdErr/UefiDebugLibStdErr.inf
+  DebugLib            |MdePkg/Library/UefiDebugLibStdErr/UefiDebugLibStdErr.inf
 
 [Components]
+
   OfflineDumpPkg/Application/OfflineDumpApp/OfflineDumpApp.inf
   OfflineDumpPkg/Application/OfflineDumpBench/OfflineDumpBench.inf
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
-  #OfflineDumpPkg/Driver/OfflineDumpConfigurationSampleDxe.inf
