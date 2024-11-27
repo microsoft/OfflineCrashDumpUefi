@@ -305,90 +305,88 @@ DW_CurrentBufferInfoFlush (
   IN OUT DUMP_WRITER  *pDumpWriter
   )
 {
-  if (pDumpWriter->MediaSize <= pDumpWriter->FlushedMediaPosition) {
-    return;
-  }
-
-  UINT64 const  MediaRemaining = pDumpWriter->MediaSize - pDumpWriter->FlushedMediaPosition;
-
-  DUMP_WRITER_BUFFER_INFO * const  pCurrentBufferInfo    = pDumpWriter->pCurrentBufferInfo;
-  UINT32 const                     CurrentBufferInfoUsed = pDumpWriter->CurrentBufferInfoUsed;
-  UINT32 const                     BytesToWrite          = (UINT32)MIN (MediaRemaining, CurrentBufferInfoUsed);
-  UINT8 const                      MediaBlockShift       = pDumpWriter->MediaBlockShift;
-  UINT8                            *pBuffer              = pCurrentBufferInfo->pBuffer;
-
-  ASSERT (pCurrentBufferInfo);
-  ASSERT (CurrentBufferInfoUsed != 0);
-  ASSERT (CurrentBufferInfoUsed <= pDumpWriter->BufferSize);
-  ASSERT (0 == (CurrentBufferInfoUsed & ((1u << MediaBlockShift) - 1)));
-  ASSERT (BytesToWrite != 0);
-  ASSERT (0 == (BytesToWrite & ((1u << MediaBlockShift) - 1)));
-  ASSERT (0 == (pDumpWriter->FlushedMediaPosition & ((1u << MediaBlockShift) - 1)));
-
-  EFI_STATUS  Status;
-
-  if (pDumpWriter->pEncryptor) {
-    DEBUG_PRINT (
-                 DEBUG_INFO,
-                 "Encrypting %u bytes using offset %llu (data)\n",
-                 BytesToWrite,
-                 pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset
-                 );
-    Status = EncryptorEncrypt (
-                               pDumpWriter->pEncryptor,
-                               pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset,
-                               BytesToWrite,
-                               pBuffer,
-                               pBuffer
-                               );
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (data) failed: %r\n", Status);
-      pDumpWriter->LastWriteError = Status;
-      ZeroMem (pBuffer, BytesToWrite);
+  if (pDumpWriter->MediaSize > pDumpWriter->FlushedMediaPosition) {
+    UINT64 const  MediaRemaining = pDumpWriter->MediaSize - pDumpWriter->FlushedMediaPosition;
+    
+    DUMP_WRITER_BUFFER_INFO * const  pCurrentBufferInfo    = pDumpWriter->pCurrentBufferInfo;
+    UINT32 const                     CurrentBufferInfoUsed = pDumpWriter->CurrentBufferInfoUsed;
+    UINT32 const                     BytesToWrite          = (UINT32)MIN (MediaRemaining, CurrentBufferInfoUsed);
+    UINT8 const                      MediaBlockShift       = pDumpWriter->MediaBlockShift;
+    UINT8                            *pBuffer              = pCurrentBufferInfo->pBuffer;
+    
+    ASSERT (pCurrentBufferInfo);
+    ASSERT (CurrentBufferInfoUsed != 0);
+    ASSERT (CurrentBufferInfoUsed <= pDumpWriter->BufferSize);
+    ASSERT (0 == (CurrentBufferInfoUsed & ((1u << MediaBlockShift) - 1)));
+    ASSERT (BytesToWrite != 0);
+    ASSERT (0 == (BytesToWrite & ((1u << MediaBlockShift) - 1)));
+    ASSERT (0 == (pDumpWriter->FlushedMediaPosition & ((1u << MediaBlockShift) - 1)));
+    
+    EFI_STATUS  Status;
+    
+    if (pDumpWriter->pEncryptor) {
+      DEBUG_PRINT (
+                   DEBUG_INFO,
+                   "Encrypting %u bytes using offset %llu (data)\n",
+                   BytesToWrite,
+                   pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset
+                   );
+      Status = EncryptorEncrypt (
+                                 pDumpWriter->pEncryptor,
+                                 pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset,
+                                 BytesToWrite,
+                                 pBuffer,
+                                 pBuffer
+                                 );
+      if (EFI_ERROR (Status)) {
+        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (data) failed: %r\n", Status);
+        pDumpWriter->LastWriteError = Status;
+        ZeroMem (pBuffer, BytesToWrite);
+      }
+    }
+    
+    if (pDumpWriter->pBlockIo2) {
+      // Send pCurrentBufferInfo into the void.
+      pDumpWriter->pCurrentBufferInfo = NULL;
+      pCurrentBufferInfo->pNext       = pCurrentBufferInfo; // In-flight
+      UINT32  NewBusyCount = InterlockedIncrement (&pDumpWriter->BusyBufferInfos);
+      DEBUG_PRINT (DEBUG_INFO, "PostIncrement BusyBufferInfos = %u\n", NewBusyCount);
+    
+      EFI_BLOCK_IO2_PROTOCOL * const  pBlockIo2 = pDumpWriter->pBlockIo2;
+      Status = pBlockIo2->WriteBlocksEx (
+                                         pBlockIo2,
+                                         pDumpWriter->MediaID,
+                                         pDumpWriter->FlushedMediaPosition >> MediaBlockShift,
+                                         &pCurrentBufferInfo->Token,
+                                         BytesToWrite,
+                                         pBuffer
+                                         );
+      if (EFI_ERROR (Status)) {
+        DEBUG_PRINT (DEBUG_ERROR, "WriteBlocksEx failed: %r\n", Status);
+        // Didn't queue a Write, so callback won't be invoked. Put it back.
+        pDumpWriter->pCurrentBufferInfo = pCurrentBufferInfo;
+        pCurrentBufferInfo->pNext       = NULL; // Not in-flight
+        NewBusyCount                    = InterlockedDecrement (&pDumpWriter->BusyBufferInfos);
+        DEBUG_PRINT (DEBUG_INFO, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
+        pDumpWriter->LastWriteError = Status;
+      }
+    } else {
+      EFI_BLOCK_IO_PROTOCOL * const  pBlockIo = pDumpWriter->pBlockIo;
+      Status = pBlockIo->WriteBlocks (
+                                      pBlockIo,
+                                      pDumpWriter->MediaID,
+                                      pDumpWriter->FlushedMediaPosition >> MediaBlockShift,
+                                      BytesToWrite,
+                                      pBuffer
+                                      );
+      if (EFI_ERROR (Status)) {
+        DEBUG_PRINT (DEBUG_ERROR, "WriteBlocks failed: %r\n", Status);
+        pDumpWriter->LastWriteError = Status;
+      }
     }
   }
 
-  if (pDumpWriter->pBlockIo2) {
-    // Send pCurrentBufferInfo into the void.
-    pDumpWriter->pCurrentBufferInfo = NULL;
-    pCurrentBufferInfo->pNext       = pCurrentBufferInfo; // In-flight
-    UINT32  NewBusyCount = InterlockedIncrement (&pDumpWriter->BusyBufferInfos);
-    DEBUG_PRINT (DEBUG_INFO, "PostIncrement BusyBufferInfos = %u\n", NewBusyCount);
-
-    EFI_BLOCK_IO2_PROTOCOL * const  pBlockIo2 = pDumpWriter->pBlockIo2;
-    Status = pBlockIo2->WriteBlocksEx (
-                                       pBlockIo2,
-                                       pDumpWriter->MediaID,
-                                       pDumpWriter->FlushedMediaPosition >> MediaBlockShift,
-                                       &pCurrentBufferInfo->Token,
-                                       BytesToWrite,
-                                       pBuffer
-                                       );
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "WriteBlocksEx failed: %r\n", Status);
-      // Didn't queue a Write, so callback won't be invoked. Put it back.
-      pDumpWriter->pCurrentBufferInfo = pCurrentBufferInfo;
-      pCurrentBufferInfo->pNext       = NULL; // Not in-flight
-      NewBusyCount                    = InterlockedDecrement (&pDumpWriter->BusyBufferInfos);
-      DEBUG_PRINT (DEBUG_INFO, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
-      pDumpWriter->LastWriteError = Status;
-    }
-  } else {
-    EFI_BLOCK_IO_PROTOCOL * const  pBlockIo = pDumpWriter->pBlockIo;
-    Status = pBlockIo->WriteBlocks (
-                                    pBlockIo,
-                                    pDumpWriter->MediaID,
-                                    pDumpWriter->FlushedMediaPosition >> MediaBlockShift,
-                                    BytesToWrite,
-                                    pBuffer
-                                    );
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "WriteBlocks failed: %r\n", Status);
-      pDumpWriter->LastWriteError = Status;
-    }
-  }
-
-  pDumpWriter->FlushedMediaPosition += CurrentBufferInfoUsed;
+  pDumpWriter->FlushedMediaPosition += pDumpWriter->CurrentBufferInfoUsed;
   pDumpWriter->CurrentBufferInfoUsed = 0;
 }
 
@@ -1018,7 +1016,9 @@ DumpWriterWriteSection (
   while (DataSize > Pos) {
     ASSERT (Pos % 16 == 0);
 
-    if (!pDumpWriter->pCurrentBufferInfo) {
+    if (pDumpWriter->pCurrentBufferInfo) {
+        ASSERT(pDumpWriter->CurrentBufferInfoUsed < pDumpWriter->BufferSize);
+    } else {
       ASSERT (pDumpWriter->CurrentBufferInfoUsed == 0);
       pDumpWriter->pCurrentBufferInfo = DW_GetFreeBuffer (pDumpWriter);
     }

@@ -2,15 +2,15 @@
 
   INF_VERSION                    = 0x00010005
   UEFI_SPECIFICATION_VERSION     = 0x0002001E
-  BASE_NAME                      = OfflineDumpApp
+  BASE_NAME                      = OfflineDumpBench
   VERSION_STRING                 = 0.1
-  FILE_GUID                      = 813959c1-07bf-4a21-97eb-765f853acae1
+  FILE_GUID                      = 3e55e640-d872-4ab0-8d6a-738713981fec
   MODULE_TYPE                    = UEFI_APPLICATION
   ENTRY_POINT                    = UefiMain
 
 [Sources]
 
-  OfflineDumpApp.c
+  OfflineDumpBench.c
 
 [Packages]
 
@@ -29,6 +29,7 @@
   DebugLib
   MemoryAllocationLib
   PcdLib
+  TimerLib
   UefiBootServicesTableLib
   UefiLib
 
@@ -36,6 +37,7 @@
 
   gEfiBlockIoProtocolGuid           ## CONSUMES
   gEfiPartitionInfoProtocolGuid     ## CONSUMES
+  gEfiShellParametersProtocolGuid   ## CONSUMES
 
 [Pcd]
   gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition #CONSUMES

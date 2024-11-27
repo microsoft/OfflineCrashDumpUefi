@@ -46,5 +46,6 @@
 
 [Components]
   OfflineDumpPkg/Application/OfflineDumpApp/OfflineDumpApp.inf
+  OfflineDumpPkg/Application/OfflineDumpBench/OfflineDumpBench.inf
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
   #OfflineDumpPkg/Driver/OfflineDumpConfigurationSampleDxe.inf
