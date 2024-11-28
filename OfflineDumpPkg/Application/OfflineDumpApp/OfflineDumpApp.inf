@@ -38,4 +38,5 @@
   gEfiPartitionInfoProtocolGuid     ## CONSUMES
 
 [Pcd]
-  gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition #CONSUMES
+
+  gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition

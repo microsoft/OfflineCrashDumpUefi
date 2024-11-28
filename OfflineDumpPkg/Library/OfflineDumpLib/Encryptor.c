@@ -1,5 +1,15 @@
 #include <Library/OfflineDumpEncryptor.h>
 
+typedef struct {
+  UINT64    Lo;
+  UINT64    Hi;
+} AES_BLOCK;
+
+STATIC_ASSERT (
+               sizeof (AES_BLOCK) == 16,
+               "AES_BLOCK expected to be 16 bytes"
+               );
+
 // Temporary to be fixed: Reach directly into OpensslLib's headers for
 // functionality that is not yet supported by BaseCryptLib.
 #undef _WIN32
@@ -29,16 +39,6 @@ To be able to use BaseCryptLib.h instead of <openssl/???.h>, we need:
 - Pkcs7Encrypt
 */
 
-typedef struct {
-  UINT64    Lo;
-  UINT64    Hi;
-} AES_BLOCK;
-
-STATIC_ASSERT (
-               sizeof (AES_BLOCK) == 16,
-               "AES_BLOCK expected to be 16 bytes"
-               );
-
 enum {
   AES_BLOCK_MASK                = AES_BLOCK_SIZE - 1,
   KEY_STREAM_BUFFER_SIZE        = 4096,
@@ -50,7 +50,7 @@ STATIC_ASSERT (
                "KeyStreamBufferSize must be a multiple of 16"
                );
 
-struct ENCRYPTOR {
+struct OFFLINE_DUMP_ENCRYPTOR {
   EVP_CIPHER_CTX    *pCipherCtx;
   UINT8             Aes128Key[16];
   UINT64            InitializationVector;
@@ -58,22 +58,22 @@ struct ENCRYPTOR {
 };
 
 void
-EncryptorDelete (
-  IN OUT ENCRYPTOR  *pEncryptor
+OfflineDumpEncryptorDelete (
+  IN OUT OFFLINE_DUMP_ENCRYPTOR  *pEncryptor
   )
 {
   if (NULL != pEncryptor) {
     EVP_CIPHER_CTX_free (pEncryptor->pCipherCtx);
-    ZeroMem (pEncryptor, OFFSET_OF (ENCRYPTOR, KeyStreamBuffer));
+    ZeroMem (pEncryptor, OFFSET_OF (OFFLINE_DUMP_ENCRYPTOR, KeyStreamBuffer));
     FreePool (pEncryptor);
   }
 }
 
 EFI_STATUS
-EncryptorNewAes128Ctr (
-  IN UINT8 const  Key[16],
-  IN UINT64       IV,
-  OUT ENCRYPTOR   **ppEncryptor
+OfflineDumpEncryptorNewAes128Ctr (
+  IN UINT8 const              Key[16],
+  IN UINT64                   IV,
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
   )
 {
   ASSERT (Key != NULL);
@@ -81,7 +81,8 @@ EncryptorNewAes128Ctr (
 
   *ppEncryptor = NULL;
 
-  ENCRYPTOR  *pNewEncryptor = AllocatePool (sizeof (*pNewEncryptor));
+  OFFLINE_DUMP_ENCRYPTOR  *pNewEncryptor = AllocatePool (sizeof (*pNewEncryptor));
+
   if (pNewEncryptor == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
@@ -95,7 +96,7 @@ EncryptorNewAes128Ctr (
   if (!EVP_EncryptInit (pNewEncryptor->pCipherCtx, EVP_aes_128_ecb (), Key, NULL) ||
       !EVP_CIPHER_CTX_set_padding (pNewEncryptor->pCipherCtx, 0))
   {
-    EncryptorDelete (pNewEncryptor);
+    OfflineDumpEncryptorDelete (pNewEncryptor);
     return EFI_DEVICE_ERROR;
   }
 
@@ -107,8 +108,8 @@ EncryptorNewAes128Ctr (
 }
 
 EFI_STATUS
-EncryptorNewAes128CtrRandom (
-  OUT ENCRYPTOR  **ppEncryptor
+OfflineDumpEncryptorNewAes128CtrRandom (
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
   )
 {
   ASSERT (ppEncryptor != NULL);
@@ -124,19 +125,20 @@ EncryptorNewAes128CtrRandom (
   }
 
   EFI_STATUS  Status;
-  Status = EncryptorNewAes128Ctr (
-                                  RandomData.Aes128Key,
-                                  RandomData.InitializationVector,
-                                  ppEncryptor
-                                  );
+
+  Status = OfflineDumpEncryptorNewAes128Ctr (
+                                             RandomData.Aes128Key,
+                                             RandomData.InitializationVector,
+                                             ppEncryptor
+                                             );
   ZeroMem (&RandomData, sizeof (RandomData));
   return Status;
 }
 
 static BOOLEAN
-EncryptKeyStreamBuffer (
-  IN ENCRYPTOR  *pEncryptor,
-  IN UINT32     BlockCount
+OD_EncryptKeyStreamBuffer (
+  IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
+  IN UINT32                  BlockCount
   )
 {
   int      InLen  = BlockCount * sizeof (AES_BLOCK);
@@ -156,12 +158,12 @@ EncryptKeyStreamBuffer (
 }
 
 EFI_STATUS
-EncryptorEncrypt (
-  IN ENCRYPTOR   *pEncryptor,
-  IN UINT64      StartingByteOffset,
-  IN UINT32      DataSize,
-  IN void const  *pInputData,
-  OUT void       *pOutputData
+OfflineDumpEncryptorEncrypt (
+  IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
+  IN UINT64                  StartingByteOffset,
+  IN UINT32                  DataSize,
+  IN void const              *pInputData,
+  OUT void                   *pOutputData
   )
 {
   ASSERT (pEncryptor != NULL);
@@ -207,7 +209,7 @@ EncryptorEncrypt (
     pEncryptor->KeyStreamBuffer[1].Lo = StartingBlockIndex + DataBlockCount;
     pEncryptor->KeyStreamBuffer[1].Hi = pEncryptor->InitializationVector;
 
-    if (!EncryptKeyStreamBuffer (pEncryptor, 2)) {
+    if (!OD_EncryptKeyStreamBuffer (pEncryptor, 2)) {
       return EFI_DEVICE_ERROR;
     }
 
@@ -226,6 +228,7 @@ EncryptorEncrypt (
   }
 
   UINT32  ProcessedBlockCount = 0;
+
   while (DataBlockCount - ProcessedBlockCount >= KEY_STREAM_BUFFER_BLOCK_COUNT) {
     // Encrypt AES blocks in KeyStreamBlockCount-sized chunks.
 
@@ -234,18 +237,19 @@ EncryptorEncrypt (
       pEncryptor->KeyStreamBuffer[i].Hi = pEncryptor->InitializationVector;
     }
 
-    if (!EncryptKeyStreamBuffer (pEncryptor, KEY_STREAM_BUFFER_BLOCK_COUNT)) {
+    if (!OD_EncryptKeyStreamBuffer (pEncryptor, KEY_STREAM_BUFFER_BLOCK_COUNT)) {
       return EFI_DEVICE_ERROR;
     }
 
     for (unsigned i = 0; i != KEY_STREAM_BUFFER_BLOCK_COUNT; i += 1) {
       pOutputBlocks[ProcessedBlockCount].Lo = pInputBlocks[ProcessedBlockCount].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
       pOutputBlocks[ProcessedBlockCount].Hi = pInputBlocks[ProcessedBlockCount].Hi ^ pEncryptor->KeyStreamBuffer[i].Hi;
-      ProcessedBlockCount += 1;
+      ProcessedBlockCount                  += 1;
     }
   }
 
   UINT32  remainingBlocks = DataBlockCount - ProcessedBlockCount;
+
   if (remainingBlocks > 0) {
     // Encrypt AES blocks in final chunk.
 
@@ -254,14 +258,14 @@ EncryptorEncrypt (
       pEncryptor->KeyStreamBuffer[i].Hi = pEncryptor->InitializationVector;
     }
 
-    if (!EncryptKeyStreamBuffer (pEncryptor, remainingBlocks)) {
+    if (!OD_EncryptKeyStreamBuffer (pEncryptor, remainingBlocks)) {
       return EFI_DEVICE_ERROR;
     }
 
     for (unsigned i = 0; i != remainingBlocks; i += 1) {
       pOutputBlocks[ProcessedBlockCount].Lo = pInputBlocks[ProcessedBlockCount].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
       pOutputBlocks[ProcessedBlockCount].Hi = pInputBlocks[ProcessedBlockCount].Hi ^ pEncryptor->KeyStreamBuffer[i].Hi;
-      ProcessedBlockCount += 1;
+      ProcessedBlockCount                  += 1;
     }
   }
 
@@ -269,21 +273,21 @@ EncryptorEncrypt (
 }
 
 EFI_STATUS
-EncryptorNewKeyInfoBlock (
-  IN ENC_DUMP_ALGORITHM  Algorithm,
-  IN void const          *pRecipientCertificate,
-  IN UINT32              RecipientCertificateSize,
-  OUT ENCRYPTOR          **ppEncryptor,
-  OUT ENC_DUMP_KEY_INFO  **ppKeyInfo
+OfflineDumpEncryptorNewKeyInfoBlock (
+  IN ENC_DUMP_ALGORITHM       Algorithm,
+  IN void const               *pRecipientCertificate,
+  IN UINT32                   RecipientCertificateSize,
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor,
+  OUT ENC_DUMP_KEY_INFO       **ppKeyInfo
   )
 {
   EFI_STATUS  Status;
 
   STACK_OF (X509)* pRecipientStack = NULL;
-  BIO                *pKeyBio       = NULL;
-  PKCS7              *pPkcs7        = NULL;
-  ENCRYPTOR          *pNewEncryptor = NULL;
-  ENC_DUMP_KEY_INFO  *pNewKeyInfo   = NULL;
+  BIO                     *pKeyBio       = NULL;
+  PKCS7                   *pPkcs7        = NULL;
+  OFFLINE_DUMP_ENCRYPTOR  *pNewEncryptor = NULL;
+  ENC_DUMP_KEY_INFO       *pNewKeyInfo   = NULL;
 
   if (Algorithm != ENC_DUMP_ALGORITHM_AES128_CTR) {
     Status = EFI_UNSUPPORTED;
@@ -313,7 +317,7 @@ EncryptorNewKeyInfoBlock (
     goto Error;
   }
 
-  Status = EncryptorNewAes128CtrRandom (&pNewEncryptor);
+  Status = OfflineDumpEncryptorNewAes128CtrRandom (&pNewEncryptor);
   if (EFI_ERROR (Status)) {
     goto Error;
   }
@@ -330,12 +334,14 @@ EncryptorNewKeyInfoBlock (
   }
 
   int  Pkcs7Size = i2d_PKCS7 (pPkcs7, NULL);
+
   if (Pkcs7Size <= 0) {
     Status = EFI_DEVICE_ERROR;
     goto Error;
   }
 
   UINT32  KeyInfoSize = sizeof (ENC_DUMP_KEY_INFO) + sizeof (UINT64) + Pkcs7Size;
+
   KeyInfoSize = (KeyInfoSize + 7u) & ~7u; // Pad to 8-byte boundary.
   pNewKeyInfo = AllocateZeroPool (KeyInfoSize);
   if (!pNewKeyInfo) {
@@ -349,6 +355,7 @@ EncryptorNewKeyInfoBlock (
   pNewKeyInfo->EncryptedKeyCmsSize      = (UINT32)Pkcs7Size;
 
   UINT8  *pKeyInfoData = (UINT8 *)(pNewKeyInfo + 1);
+
   CopyMem (pKeyInfoData, &pNewEncryptor->InitializationVector, sizeof (UINT64));
   pKeyInfoData += sizeof (UINT64);
   Pkcs7Size     = i2d_PKCS7 (pPkcs7, &pKeyInfoData);
@@ -363,7 +370,7 @@ EncryptorNewKeyInfoBlock (
 Error:
 
   if (pNewEncryptor) {
-    EncryptorDelete (pNewEncryptor);
+    OfflineDumpEncryptorDelete (pNewEncryptor);
     pNewEncryptor = NULL;
   }
 

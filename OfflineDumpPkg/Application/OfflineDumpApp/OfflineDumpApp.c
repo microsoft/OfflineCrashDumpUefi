@@ -26,11 +26,11 @@ LocateDumpDevice (
   EFI_STATUS  Status;
   EFI_HANDLE  BlockDeviceHandle = NULL;
 
-  if (PcdGetBool (PcdDmpUsePartition)) {
+  if (PcdGetBool (PcdOfflineDumpUsePartition)) {
     // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
-    Status = GetOfflineDumpPartitionHandle (&BlockDeviceHandle);
+    Status = FindOfflineDumpPartitionHandle (&BlockDeviceHandle);
     if (EFI_ERROR (Status)) {
-      _DEBUG_PRINT (DEBUG_ERROR, "OD: GetOfflineDumpPartitionHandle() failed (%r)\n", Status);
+      _DEBUG_PRINT (DEBUG_ERROR, "OD: FindOfflineDumpPartitionHandle() failed (%r)\n", Status);
     }
   } else {
     // For testing on Emulator: Look for raw block device that is not a partition.
@@ -106,56 +106,58 @@ UefiMain (
     goto Done;
   }
 
-  DUMP_WRITER_OPTIONS  Options = {
+  OFFLINE_DUMP_WRITER_OPTIONS  Options = {
     .DisableBlockIo2   = FALSE,
     .ForceUnencrypted  = FALSE,
     .BufferCount       = 0,
     .BufferMemoryLimit = 0,
   };
-  DUMP_WRITER          *DumpWriter;
-  Status = DumpWriterOpen (
-                           BlockDeviceHandle,
-                           // Must not include DUMP_VALID or INSUFFICIENT_STORAGE flags -- they're automatic.
-                           0,
-                           SectionCount,
-                           &Options,
-                           &DumpWriter
-                           );
+  OFFLINE_DUMP_WRITER          *DumpWriter;
+
+  Status = OfflineDumpWriterOpen (
+                                  BlockDeviceHandle,
+                                  // Must not include DUMP_VALID or INSUFFICIENT_STORAGE flags -- they're automatic.
+                                  0,
+                                  SectionCount,
+                                  &Options,
+                                  &DumpWriter
+                                  );
   if (EFI_ERROR (Status)) {
     Print (L"DumpWriterOpen() failed (%r)\n", Status);
     goto Done;
   }
 
   RAW_DUMP_SECTION_INFORMATION  Information;
+
   ZeroMem (&Information, sizeof (Information));
 
   for (UINT32 SectionIndex = 0; SectionIndex != SectionCount; SectionIndex += 1) {
-    Status = DumpWriterWriteSection (
-                                     DumpWriter,
-                                     // Should include DUMP_VALID flag if section is valid.
-                                     // Must not include INSUFFICIENT_STORAGE flag -- it's automatic.
-                                     RAW_DUMP_SECTION_HEADER_DUMP_VALID,
-                                     1,
-                                     0,
-                                     RAW_DUMP_SECTION_SV_SPECIFIC,
-                                     &Information,
-                                     "SV_SPECIFIC",
-                                     NULL,
-                                     SectionData,
-                                     sizeof (SectionData)
-                                     );
+    Status = OfflineDumpWriterWriteSection (
+                                            DumpWriter,
+                                            // Should include DUMP_VALID flag if section is valid.
+                                            // Must not include INSUFFICIENT_STORAGE flag -- it's automatic.
+                                            RAW_DUMP_SECTION_HEADER_DUMP_VALID,
+                                            1,
+                                            0,
+                                            RAW_DUMP_SECTION_SV_SPECIFIC,
+                                            &Information,
+                                            "SV_SPECIFIC",
+                                            NULL,
+                                            SectionData,
+                                            sizeof (SectionData)
+                                            );
     if (EFI_ERROR (Status)) {
       Print (L"DumpWriterWriteSection() failed (%r)\n", Status);
       goto Done;
     }
   }
 
-  EFI_STATUS const  LastError           = DumpWriterLastWriteError (DumpWriter);
-  UINT64 const      MediaPos            = DumpWriterMediaPosition (DumpWriter);
-  UINT64 const      MediaSize           = DumpWriterMediaSize (DumpWriter);
-  BOOLEAN  const    InsufficientStorage = DumpWriterHasInsufficientStorage (DumpWriter);
+  EFI_STATUS const  LastError           = OfflineDumpWriterLastWriteError (DumpWriter);
+  UINT64 const      MediaPos            = OfflineDumpWriterMediaPosition (DumpWriter);
+  UINT64 const      MediaSize           = OfflineDumpWriterMediaSize (DumpWriter);
+  BOOLEAN  const    InsufficientStorage = OfflineDumpWriterHasInsufficientStorage (DumpWriter);
 
-  Status = DumpWriterClose (DumpWriter, TRUE);
+  Status = OfflineDumpWriterClose (DumpWriter, TRUE);
   if (EFI_ERROR (Status)) {
     Print (L"DumpWriterClose() failed (%r)\n", Status);
     goto Done;

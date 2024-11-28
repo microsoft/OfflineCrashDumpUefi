@@ -7,7 +7,7 @@
 static UINT32 const  mOfflineDumpEncryptionPublicKeyMaxSize = 0x10000;
 
 EFI_STATUS
-OfflineMemoryDumpUseCapability (
+GetVariableOfflineMemoryDumpUseCapability (
   OUT OFFLINE_DUMP_USE_CAPABILITY_FLAGS  *pFlags
   )
 {
@@ -27,7 +27,7 @@ OfflineMemoryDumpUseCapability (
 }
 
 EFI_STATUS
-OfflineMemoryDumpOsData (
+GetVariableOfflineMemoryDumpOsData (
   OUT UINT64  *pOsData
   )
 {
@@ -47,7 +47,7 @@ OfflineMemoryDumpOsData (
 }
 
 EFI_STATUS
-OfflineMemoryDumpEncryptionAlgorithm (
+GetVariableOfflineMemoryDumpEncryptionAlgorithm (
   OUT ENC_DUMP_ALGORITHM  *pAlgorithm
   )
 {
@@ -67,7 +67,7 @@ OfflineMemoryDumpEncryptionAlgorithm (
 }
 
 EFI_STATUS
-OfflineMemoryDumpEncryptionPublicKey (
+GetVariableOfflineMemoryDumpEncryptionPublicKey (
   OUT void    **ppRecipientCertificate,
   OUT UINT32  *pRecipientCertificateSize
   )

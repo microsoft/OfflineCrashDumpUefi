@@ -23,7 +23,6 @@
 
   OfflineDumpLib
 
-  UefiApplicationEntryPoint
   BaseLib
   BaseMemoryLib
   DebugLib
@@ -33,6 +32,8 @@
   UefiBootServicesTableLib
   UefiLib
 
+  UefiApplicationEntryPoint
+
 [Protocols]
 
   gEfiBlockIoProtocolGuid           ## CONSUMES
@@ -40,4 +41,5 @@
   gEfiShellParametersProtocolGuid   ## CONSUMES
 
 [Pcd]
-  gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition #CONSUMES
+
+  gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition

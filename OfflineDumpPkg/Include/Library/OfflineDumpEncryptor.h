@@ -13,19 +13,19 @@ Consumes:
 #include <Uefi/UefiBaseType.h>
 #include <Guid/OfflineDumpEncryption.h>
 
-// Forward decaration of the opaque ENCRYPTOR object.
-typedef struct ENCRYPTOR ENCRYPTOR;
+// Forward decaration of the opaque OFFLINE_DUMP_ENCRYPTOR object.
+typedef struct OFFLINE_DUMP_ENCRYPTOR OFFLINE_DUMP_ENCRYPTOR;
 
 // Destroys and frees an Encryptor object.
 void
-EncryptorDelete (
-  IN OUT ENCRYPTOR  *pEncryptor
+OfflineDumpEncryptorDelete (
+  IN OUT OFFLINE_DUMP_ENCRYPTOR  *pEncryptor
   );
 
-// Creates an ENCRYPTOR and a ENC_DUMP_KEY_INFO block for the specified algorithm and
-// recipient. Algorithm will typically come from the OfflineMemoryDumpEncryptionAlgorithm
-// variable. pRecipientCertificate will typically come from the
-// OfflineMemoryDumpEncryptionPublicKey variable.
+// Creates an OFFLINE_DUMP_ENCRYPTOR and a ENC_DUMP_KEY_INFO block for the specified
+// algorithm and recipient. Algorithm will typically come from the
+// OfflineMemoryDumpEncryptionAlgorithm variable. pRecipientCertificate will typically
+// come from the OfflineMemoryDumpEncryptionPublicKey variable.
 //
 // This function will do the following:
 //
@@ -37,12 +37,12 @@ EncryptorDelete (
 // 5. Return the Encryptor and KeyInfo block. The caller must free these via
 //    EncryptorAes128CtrDestroy(*ppEncryptor) and FreePool(*ppKeyInfoBlock).
 EFI_STATUS
-EncryptorNewKeyInfoBlock (
-  IN ENC_DUMP_ALGORITHM  Algorithm,
-  IN void const          *pRecipientCertificate,
-  IN UINT32              RecipientCertificateSize,
-  OUT ENCRYPTOR          **ppEncryptor,
-  OUT ENC_DUMP_KEY_INFO  **ppKeyInfoBlock
+OfflineDumpEncryptorNewKeyInfoBlock (
+  IN ENC_DUMP_ALGORITHM       Algorithm,
+  IN void const               *pRecipientCertificate,
+  IN UINT32                   RecipientCertificateSize,
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor,
+  OUT ENC_DUMP_KEY_INFO       **ppKeyInfoBlock
   );
 
 // Converts DataSize bytes of plaintext InputData into encrypted OutputData.
@@ -58,32 +58,32 @@ EncryptorNewKeyInfoBlock (
 // In-place operation is supported, i.e. pInputData and pOutputData may point to the same
 // place.
 EFI_STATUS
-EncryptorEncrypt (
-  IN ENCRYPTOR   *pEncryptor,
-  IN UINT64      StartingByteOffset,
-  IN UINT32      DataSize,
-  IN void const  *pInputData,
-  OUT void       *pOutputData
+OfflineDumpEncryptorEncrypt (
+  IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
+  IN UINT64                  StartingByteOffset,
+  IN UINT32                  DataSize,
+  IN void const              *pInputData,
+  OUT void                   *pOutputData
   );
 
-// Creates a new ENCRYPTOR object for AES128-CTR with the specified Key and IV.
+// Creates a new OFFLINE_DUMP_ENCRYPTOR object for AES128-CTR with the specified Key and IV.
 //
 // This function exists primarily for testing purposes. In normal usage, you'll use
 // EncryptorNewKeyInfoBlock instead of creating an Encryptor directly.
 EFI_STATUS
-EncryptorNewAes128Ctr (
-  IN UINT8 const  Key[16],
-  IN UINT64       IV,
-  OUT ENCRYPTOR   **ppEncryptor
+OfflineDumpEncryptorNewAes128Ctr (
+  IN UINT8 const              Key[16],
+  IN UINT64                   IV,
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
   );
 
-// Creates a new ENCRYPTOR object for AES128-CTR with random key and IV.
+// Creates a new OFFLINE_DUMP_ENCRYPTOR object for AES128-CTR with random key and IV.
 //
 // This function exists primarily for testing purposes. In normal usage, you'll use
 // EncryptorNewKeyInfoBlock instead of creating an Encryptor directly.
 EFI_STATUS
-EncryptorNewAes128CtrRandom (
-  OUT ENCRYPTOR  **ppEncryptor
+OfflineDumpEncryptorNewAes128CtrRandom (
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
   );
 
 #endif // _included_Library_OfflineDumpEncryptor_h

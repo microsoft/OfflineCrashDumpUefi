@@ -5,10 +5,9 @@ PRELIMINARY DESIGN:
 
 Current goal is just to get to the point of "valid benchmarks".
 
-- This probably generates invalid dump files.
-- This is not the intended final interface. Current interface is intended to simplify
-  development and testing. Intended final interface is a single function,
-  OfflineDumpWrite(pConfigurationProtocol).
+This is not the intended final interface. Current interface is intended to simplify
+development and testing. Intended final interface is a single function,
+OfflineDumpWrite(pConfigurationProtocol).
 
 Consumes:
 
@@ -29,17 +28,18 @@ Consumes:
 #include <Uefi/UefiBaseType.h>
 #include <Guid/OfflineDumpHeaders.h>
 
-// Forward decaration of the opaque DUMP_WRITER object.
-typedef struct DUMP_WRITER DUMP_WRITER;
+// Forward decaration of the opaque OFFLINE_DUMP_WRITER object.
+typedef struct OFFLINE_DUMP_WRITER OFFLINE_DUMP_WRITER;
 
-// Options for adjusting the behavior of DumpWriter.
-typedef struct DUMP_WRITER_OPTIONS {
+// Options for adjusting the behavior of a DumpWriter.
+typedef struct OFFLINE_DUMP_WRITER_OPTIONS {
   // If false, use BLOCK_IO_PROTOCOL only if BLOCK_IO2_PROTOCOL is not supported.
   // If true, always use BLOCK_IO_PROTOCOL.
   BOOLEAN    DisableBlockIo2;
 
   // If false, use OfflineMemoryDumpEncryptionAlgorithm variable to determine encryption.
-  // If true, ignore OfflineMemoryDumpEncryptionAlgorithm and always write an unencrypted dump.
+  // If true, ignore OfflineMemoryDumpEncryptionAlgorithm and always write an unencrypted
+  // dump.
   BOOLEAN    ForceUnencrypted;
 
   // Number of buffers to use for async I/O. Significant only if the device supports
@@ -65,7 +65,7 @@ typedef struct DUMP_WRITER_OPTIONS {
   // allocates other memory, e.g. it allocates SectionCountExpected * 64 bytes to track
   // section headers.
   UINT32    BufferMemoryLimit;
-} DUMP_WRITER_OPTIONS;
+} OFFLINE_DUMP_WRITER_OPTIONS;
 
 // Finalizes the dump and deletes the dump writer.
 // May block on write operations (writing headers, flushing blocks).
@@ -75,20 +75,22 @@ typedef struct DUMP_WRITER_OPTIONS {
 // 1. Flushes any pending data.
 // 2. Waits for all pending I/O operations to complete.
 // 3. Updates dump header Flags field:
-//    - If DumpWriterLastError() != 0, does not modify the header flags (dump invalid).
-//    - Else if DumpWriterHasInsufficientStorage(), sets the INSUFFICIENT_STORAGE flag.
+//    - If OfflineDumpWriterLastError() != 0, does not modify the header flags (dump
+//      invalid).
+//    - Else if OfflineDumpWriterHasInsufficientStorage(), sets the INSUFFICIENT_STORAGE
+//      flag.
 //    - Else if DumpValid, sets the DUMP_VALID flag.
 //    - Else does not modify the header flags (dump invalid).
 // 4. Status = FlushHeaders() && pBlockIo->FlushBlocks().
 // 5. Deletes pDumpWriter.
 // 6. Returns Status.
 EFI_STATUS
-DumpWriterClose (
-  IN OUT DUMP_WRITER  *pDumpWriter,
-  IN BOOLEAN          DumpValid
+OfflineDumpWriterClose (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter,
+  IN BOOLEAN                  DumpValid
   );
 
-// Creates a new DUMP_WRITER object for writing a dump to the specified device.
+// Creates a new OFFLINE_DUMP_WRITER object for writing a dump to the specified device.
 // May block on a write operation (writing headers).
 //
 // DumpDeviceHandle: must support either EFI_BLOCK_IO_PROTOCOL or EFI_BLOCK_IO2_PROTOCOL.
@@ -113,76 +115,79 @@ DumpWriterClose (
 // 5. Writes initial dump headers to dump device (DUMP_VALID flag not set).
 //
 // If an error is encountered, sets *ppDumpWriter == NULL and returns an error status.
-// Otherwise, sets *ppDumpWriter to the new DUMP_WRITER object and returns success.
+// Otherwise, sets *ppDumpWriter to the new OFFLINE_DUMP_WRITER object and returns
+// success.
 EFI_STATUS
-DumpWriterOpen (
-  IN EFI_HANDLE                 DumpDeviceHandle,
-  IN RAW_DUMP_HEADER_FLAGS      DumpHeaderFlags,
-  IN UINT32                     SectionCountExpected,
-  IN DUMP_WRITER_OPTIONS const  *pOptions OPTIONAL,
-  OUT DUMP_WRITER               **ppDumpWriter
+OfflineDumpWriterOpen (
+  IN EFI_HANDLE                         DumpDeviceHandle,
+  IN RAW_DUMP_HEADER_FLAGS              DumpHeaderFlags,
+  IN UINT32                             SectionCountExpected,
+  IN OFFLINE_DUMP_WRITER_OPTIONS const  *pOptions OPTIONAL,
+  OUT OFFLINE_DUMP_WRITER               **ppDumpWriter
   );
 
 // If any block write operations have failed, returns the error status of the most
 // recent failure. Otherwise, returns EFI_SUCCESS.
 //
-// Note that DumpWriterClose() will automatically mark the dump as "invalid" if any block
-// write operations fail.
+// Note that OfflineDumpWriterClose() will automatically mark the dump as "invalid" if
+// any block write operations fail.
 EFI_STATUS
-DumpWriterLastWriteError (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterLastWriteError (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   );
 
-// Returns the device position to which the next DumpWriterWriteSectionData() will write.
+// Returns the device position to which the next OfflineDumpWriterWriteSectionData() will
+// write.
+//
 // This is not the same as the raw dump offset -- this value includes the size of the
-// encryption header (if any). This may be larger than DumpWriterMediaSize() if the
-// device is too small for the written data.
+// encryption header (if any). This may be larger than OfflineDumpWriterMediaSize() if
+// the device is too small for the written data.
 UINT64
-DumpWriterMediaPosition (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterMediaPosition (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   );
 
 // Returns the size of the device.
 UINT64
-DumpWriterMediaSize (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterMediaSize (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   );
 
 // Returns true if the dump writer has run out of storage space, i.e. returns
-// DumpWriterMediaSize() < DumpWriterMediaPosition().
+// OfflineDumpWriterMediaSize() < OfflineDumpWriterMediaPosition().
 //
-// Note that DumpWriterClose() will automatically mark the dump as "insufficient storage"
-// if this is true.
+// Note that OfflineDumpWriterClose() will automatically mark the dump as "insufficient
+// storage" if this is true.
 //
 // Note that caller should still write the rest of the sections to the dump so that the
 // TotalDumpSizeRequired field can be calculated correctly.
 BOOLEAN
-DumpWriterHasInsufficientStorage (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterHasInsufficientStorage (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   );
 
 // Gets the dump header.
 // Caller should not modify the header. The header fields are managed automatically by
 // the writer.
 RAW_DUMP_HEADER const *
-DumpWriterGetDumpHeader (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterGetDumpHeader (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   );
 
 // Flushes the current dump headers to the dump device.
 // May block on a write operation.
 //
-// Headers will be written automatically as part of DumpWriterClose(), but you may call
-// this method at other times to save progress in case dump is interrupted.
+// Headers will be written automatically as part of OfflineDumpWriterClose(), but you may
+// call this method at other times to save progress in case dump is interrupted.
 //
 // This is a best-effort method because the headers will be written again as part of
-// DumpWriterClose(). An error in DumpWriterFlushHeaders() will not affect
-// DumpWriterLastWriteError() and will not invalidate the dump.
+// OfflineDumpWriterClose(). An error in OfflineDumpWriterFlushHeaders() will not affect
+// OfflineDumpWriterLastWriteError() and will not invalidate the dump.
 //
 // Returns a status code indicating whether the headers were flushed.
 EFI_STATUS
-DumpWriterFlushHeaders (
-  IN OUT DUMP_WRITER  *pDumpWriter
+OfflineDumpWriterFlushHeaders (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   );
 
 // Callback to use for reading the section data, e.g. to access fenced memory regions.
@@ -191,15 +196,17 @@ DumpWriterFlushHeaders (
 //     Important: Copy to pDestinationPos[0..Size]. Do not add Offset to this pointer.
 //
 // pDataStart: The value of the pDataStart parameter that was passed to
-//     DumpWriterWriteSection.
+//     OfflineDumpWriterWriteSection.
 //
 // Offset: offset into the section. This will always be less than the DataSize parameter
-//     that was passed to DumpWriterWriteSection. This will always be a multiple of 16.
+//     that was passed to OfflineDumpWriterWriteSection. This will always be a multiple
+//     of 16.
 //
 // Size: number of bytes to read. Offset + Size will always be less than or equal to the
-//     DataSize parameter that was passed to DumpWriterWriteSection. Size will always be
-//     a multiple of 16 unless DataSize was not, in which case the final call to this
-//     callback will have a Size that is not a multiple of 16 (to read the last bytes).
+//     DataSize parameter that was passed to OfflineDumpWriterWriteSection. Size will
+//     always be a multiple of 16 unless DataSize was not, in which case the final call
+//     to this callback will have a Size that is not a multiple of 16 (to read the last
+//     bytes).
 //
 // Returns: EFI_SUCCESS on success, or error code if copy failed. An error will cause
 //     copying to stop, section to be marked as invalid, dump to be marked as invalid.
@@ -244,7 +251,8 @@ typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
 //
 // Type: type of the section.
 //
-// pInformation: information for the section header. The active field is selected by Type.
+// pInformation: information for the section header. The active field is selected by
+//      Type.
 //
 // pName: name of the section. Must be a null-terminated string. If the name is longer
 //      than 20 characters, it will be truncated.
@@ -266,8 +274,8 @@ typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
 //     been written.
 //   - success otherwise. Returns success even if there is insufficient storage to write
 //     the data or if an error occurs while copying or writing the data. Check
-//     DumpWriterLastWriteError() and DumpWriterHasInsufficientStorage() to determine if
-//     one of those conditions occurred.
+//     OfflineDumpWriterLastWriteError() and OfflineDumpWriterHasInsufficientStorage() to
+//     determine whether one of those conditions occurred.
 //
 // This method does the following:
 //
@@ -280,11 +288,11 @@ typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
 // 5. Updates the dump header TotalDumpSizeRequired, DumpSize, SectionsCount fields.
 //
 // This does not flush the updated headers to disk. Headers will be flushed to disk as
-// part of DumpWriterClose(), or you may call DumpWriterFlushHeaders() to save progress
-// in case the dump is interrupted.
+// part of OfflineDumpWriterClose(), or you may call OfflineDumpWriterFlushHeaders() to
+// save progress in case the dump is interrupted.
 EFI_STATUS
-DumpWriterWriteSection (
-  IN OUT DUMP_WRITER                     *pDumpWriter,
+OfflineDumpWriterWriteSection (
+  IN OUT OFFLINE_DUMP_WRITER             *pDumpWriter,
   IN RAW_DUMP_SECTION_HEADER_FLAGS       SectionHeaderFlags,
   IN UINT16                              MajorVersion,
   IN UINT16                              MinorVersion,

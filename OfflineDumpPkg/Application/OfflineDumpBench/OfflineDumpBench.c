@@ -5,6 +5,7 @@
 #include <Protocol/BlockIo.h>
 #include <Protocol/PartitionInfo.h>
 #include <Protocol/ShellParameters.h>
+#include <Protocol/Rng.h>
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -28,11 +29,11 @@ LocateDumpDevice (
   EFI_STATUS  Status;
   EFI_HANDLE  BlockDeviceHandle = NULL;
 
-  if (PcdGetBool (PcdDmpUsePartition)) {
+  if (PcdGetBool (PcdOfflineDumpUsePartition)) {
     // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
-    Status = GetOfflineDumpPartitionHandle (&BlockDeviceHandle);
+    Status = FindOfflineDumpPartitionHandle (&BlockDeviceHandle);
     if (EFI_ERROR (Status)) {
-      _DEBUG_PRINT (DEBUG_ERROR, "OD: GetOfflineDumpPartitionHandle() failed (%r)\n", Status);
+      _DEBUG_PRINT (DEBUG_ERROR, "OD: FindOfflineDumpPartitionHandle() failed (%r)\n", Status);
     }
   } else {
     // For testing on Emulator: Look for raw block device that is not a partition.
@@ -282,15 +283,16 @@ UefiMain (
 
   EFI_SHELL_PARAMETERS_PROTOCOL  *pShellParameters;
 
-  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, (void**)&pShellParameters);
+  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, (void **)&pShellParameters);
   if (EFI_ERROR (Status)) {
     Print (L"HandleProtocol(ShellParameters) failed (%r)\n", Status);
     return Status;
   }
 
-  CHAR16 * const * const  Argv = pShellParameters->Argv;
-  UINTN                   Argc = pShellParameters->Argc;
-  UINTN                   ArgI = 1;
+  CHAR16 *const *const  Argv = pShellParameters->Argv;
+  UINTN                 Argc = pShellParameters->Argc;
+  UINTN                 ArgI = 1;
+
   if (Argc <= ArgI) {
     return ShowUsage ();
   }
@@ -301,6 +303,7 @@ UefiMain (
   UINT8 const    BufferCount = Argc <= ArgI ? 0u : StrToUint8 ("BufferCount", Argv[ArgI++], &AllOk);
   BOOLEAN const  NoEncrypt   = Argc <= ArgI ? 0u : StrToBool ("NoEncrypt", Argv[ArgI++], &AllOk);
   BOOLEAN const  NoAsync     = Argc <= ArgI ? 0u : StrToBool ("NoAsync", Argv[ArgI++], &AllOk);
+
   if (!AllOk) {
     return ShowUsage ();
   }
@@ -318,6 +321,7 @@ UefiMain (
 
   UINT8 const  *pPhysicalBase;
   UINTN        PhysicalSize;
+
   GetLargestConventionalRegion (&pPhysicalBase, &PhysicalSize);
 
   Status = LocateDumpDevice (ImageHandle, &BlockDeviceHandle);
@@ -330,45 +334,48 @@ UefiMain (
 
   UINT64 const  TimeStart = GetPerformanceCounter ();
 
-  DUMP_WRITER_OPTIONS  Options = {
+  OFFLINE_DUMP_WRITER_OPTIONS  Options = {
     .DisableBlockIo2   = NoAsync,
     .ForceUnencrypted  = NoEncrypt,
     .BufferCount       = BufferCount,
     .BufferMemoryLimit = BufferMem
   };
-  DUMP_WRITER          *DumpWriter;
-  Status = DumpWriterOpen (
-                           BlockDeviceHandle,
-                           0,
-                           SectionCount,
-                           &Options,
-                           &DumpWriter
-                           );
+  OFFLINE_DUMP_WRITER          *DumpWriter;
+
+  Status = OfflineDumpWriterOpen (
+                                  BlockDeviceHandle,
+                                  0,
+                                  SectionCount,
+                                  &Options,
+                                  &DumpWriter
+                                  );
   if (EFI_ERROR (Status)) {
     Print (L"DumpWriterOpen() failed (%r)\n", Status);
     goto Done;
   }
 
   RAW_DUMP_SECTION_INFORMATION  Information;
+
   ZeroMem (&Information, sizeof (Information));
 
   UINT8 const  *pFakeBase = pPhysicalBase;
   UINT64       Remaining  = DumpSize;
+
   while (Remaining != 0) {
     UINTN const  SectionSize = (UINTN)MIN (Remaining, PhysicalSize);
     Information.DdrRange.Base = (UINT64)(UINTN)pFakeBase;
-    Status                    = DumpWriterWriteSection (
-                                                        DumpWriter,
-                                                        RAW_DUMP_SECTION_HEADER_DUMP_VALID,
-                                                        RAW_DUMP_DDR_RANGE_CURRENT_MAJOR_VERSION,
-                                                        RAW_DUMP_DDR_RANGE_CURRENT_MINOR_VERSION,
-                                                        RAW_DUMP_SECTION_DDR_RANGE,
-                                                        &Information,
-                                                        "Memory",
-                                                        NULL,
-                                                        pPhysicalBase,
-                                                        SectionSize
-                                                        );
+    Status                    = OfflineDumpWriterWriteSection (
+                                                               DumpWriter,
+                                                               RAW_DUMP_SECTION_HEADER_DUMP_VALID,
+                                                               RAW_DUMP_DDR_RANGE_CURRENT_MAJOR_VERSION,
+                                                               RAW_DUMP_DDR_RANGE_CURRENT_MINOR_VERSION,
+                                                               RAW_DUMP_SECTION_DDR_RANGE,
+                                                               &Information,
+                                                               "Memory",
+                                                               NULL,
+                                                               pPhysicalBase,
+                                                               SectionSize
+                                                               );
     if (EFI_ERROR (Status)) {
       Print (L"DumpWriterWriteSection() failed (%r)\n", Status);
       goto Done;
@@ -378,12 +385,12 @@ UefiMain (
     Remaining -= SectionSize;
   }
 
-  EFI_STATUS const  LastError           = DumpWriterLastWriteError (DumpWriter);
-  UINT64 const      MediaPos            = DumpWriterMediaPosition (DumpWriter);
-  UINT64 const      MediaSize           = DumpWriterMediaSize (DumpWriter);
-  BOOLEAN  const    InsufficientStorage = DumpWriterHasInsufficientStorage (DumpWriter);
+  EFI_STATUS const  LastError           = OfflineDumpWriterLastWriteError (DumpWriter);
+  UINT64 const      MediaPos            = OfflineDumpWriterMediaPosition (DumpWriter);
+  UINT64 const      MediaSize           = OfflineDumpWriterMediaSize (DumpWriter);
+  BOOLEAN  const    InsufficientStorage = OfflineDumpWriterHasInsufficientStorage (DumpWriter);
 
-  Status = DumpWriterClose (DumpWriter, TRUE);
+  Status = OfflineDumpWriterClose (DumpWriter, TRUE);
   if (EFI_ERROR (Status)) {
     Print (L"DumpWriterClose() failed (%r)\n", Status);
     goto Done;
@@ -409,6 +416,7 @@ UefiMain (
   UINT64 const  TimeEnd            = GetPerformanceCounter ();
   UINT64 const  TimeNS             = GetTimeInNanoSecond (TimeEnd - TimeStart);
   UINT64 const  KilobytesPerSecond = DumpSize * (1000000000 / 1024) / (TimeNS ? TimeNS : 1);
+
   Print (
          L"Results: %llu KB, %llu ms, %llu KB/sec\n",
          (unsigned long long)(DumpSize / 1024),

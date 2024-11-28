@@ -13,62 +13,62 @@
 #include <Library/UefiBootServicesTableLib.h>
 
 #include <Library/UefiLib.h>
-#define DEBUG_PRINT(bits, ...)  _DEBUG_PRINT(bits, "DW: " __VA_ARGS__)
+#define DEBUG_PRINT(bits, ...)  _DEBUG_PRINT(bits, "ODW: " __VA_ARGS__)
 
 static const UINT8   BufferCountDefault       = 8;
 static const UINT32  BufferMemoryLimitDefault = 0x100000; // 1 MB
 static const UINT32  SectionCountMax          = (0x80000000 - sizeof (RAW_DUMP_HEADER)) / sizeof (RAW_DUMP_SECTION_HEADER);
 static const UINT32  SectionAlign             = 16;
 
-typedef struct DUMP_WRITER_BUFFER_INFO DUMP_WRITER_BUFFER_INFO;
+typedef struct ODW_BUFFER_INFO ODW_BUFFER_INFO;
 
-struct DUMP_WRITER {
-  ENCRYPTOR                             *pEncryptor;        // NULL if unencrypted.
-  UINT8                                 *pHeaders;          // HeadersSize buffer for encHdr+dumpHdr+sectionHdrs (padded to a multiple of BlockSize).
-  UINT8                                 *pHeadersSync;      // HeadersSyncSize buffer for writing headers. Used only when no async I/O support.
-  DUMP_WRITER_BUFFER_INFO               *pBufferInfos;      // BufferCount buffers, each with room for BufferSize bytes.
-  EFI_EVENT                             OperationCompleted; // Signaled by DW_BufferInfoOperationComplete.
+struct OFFLINE_DUMP_WRITER {
+  OFFLINE_DUMP_ENCRYPTOR       *pEncryptor;        // NULL if unencrypted.
+  UINT8                        *pHeaders;          // HeadersSize buffer for encHdr+dumpHdr+sectionHdrs (padded to a multiple of BlockSize).
+  UINT8                        *pHeadersSync;      // HeadersSyncSize buffer for writing headers. Used only when no async I/O support.
+  ODW_BUFFER_INFO              *pBufferInfos;      // BufferCount buffers, each with room for BufferSize bytes.
+  EFI_EVENT                    OperationCompleted; // Signaled by ODW_BufferInfoOperationComplete.
 
   // Above this line: Allocations that must be freed during destruction.
   // Below this line: fields that are set up during construction and never modified.
 
-  EFI_BLOCK_IO2_PROTOCOL                *pBlockIo2;           // Set if async IO is supported. If NULL, use pBlockIo for blocking IO.
-  EFI_BLOCK_IO_PROTOCOL                 *pBlockIo;            // Set only if pBlockIo2 is NULL.
-  UINT64                                MediaSize;            // Storage size of the device in bytes.
-  UINT32                                MediaID;              // Media ID of the device (used to trigger error if media is changed).
-  UINT32                                RawDumpOffset;        // Size of encryption headers (if any). RawDumpHeader is at &pHeaders[RawDumpOffset]
-  UINT32                                HeadersSize;          // Size of pHeaders. This must be a multiple of BlockSize.
-  UINT32                                HeadersSyncSize;      // Size of pHeadersSync. This must be a multiple of BlockSize.
-  UINT32                                SectionCountExpected; // pHeaders has room for this many section headers.
-  UINT32                                BufferSize;           // Size of each pBufferInfos buffer. Multiple of MediaBlockSize, multiple of EFI_PAGE_SIZE.
-  UINT8                                 BufferCount;          // Number of pBufferInfos buffers.
-  UINT8                                 MediaBlockShift;      // Log2 of MediaBlockSize.
+  EFI_BLOCK_IO2_PROTOCOL       *pBlockIo2;                      // Set if async IO is supported. If NULL, use pBlockIo for blocking IO.
+  EFI_BLOCK_IO_PROTOCOL        *pBlockIo;                       // Set only if pBlockIo2 is NULL.
+  UINT64                       MediaSize;                       // Storage size of the device in bytes.
+  UINT32                       MediaID;                         // Media ID of the device (used to trigger error if media is changed).
+  UINT32                       RawDumpOffset;                   // Size of encryption headers (if any). RawDumpHeader is at &pHeaders[RawDumpOffset]
+  UINT32                       HeadersSize;                     // Size of pHeaders. This must be a multiple of BlockSize.
+  UINT32                       HeadersSyncSize;                 // Size of pHeadersSync. This must be a multiple of BlockSize.
+  UINT32                       SectionCountExpected;            // pHeaders has room for this many section headers.
+  UINT32                       BufferSize;                      // Size of each pBufferInfos buffer. Multiple of MediaBlockSize, multiple of EFI_PAGE_SIZE.
+  UINT8                        BufferCount;                     // Number of pBufferInfos buffers.
+  UINT8                        MediaBlockShift;                 // Log2 of MediaBlockSize.
 
   // Above this line: fields that are set up during construction and never modified.
   // Below this line: fields that are modified during operation.
 
-  EFI_STATUS                            LastWriteError;        // Most recent write error. Will cause dump to be marked invalid.
-  UINT32                                CurrentBufferInfoUsed; // Bytes written to pCurrentBufferInfo's buffer.
-  UINT64                                FlushedMediaPosition;  // MediaPosition = FlushedMediaPosition + CurrentBufferInfoUsed.
+  EFI_STATUS                   LastWriteError;                   // Most recent write error. Will cause dump to be marked invalid.
+  UINT32                       CurrentBufferInfoUsed;            // Bytes written to pCurrentBufferInfo's buffer.
+  UINT64                       FlushedMediaPosition;             // MediaPosition = FlushedMediaPosition + CurrentBufferInfoUsed.
 
   // Each BufferInfo should be covered by exactly one of the following at all times:
 
-  DUMP_WRITER_BUFFER_INFO               *pCurrentBufferInfo;       // Filled up to CurrentBufferInfoUsed.
-  DUMP_WRITER_BUFFER_INFO               *pFirstFreeBufferInfo;     // Linked-list of empty buffer infos.
-  UINT32 volatile                       BusyBufferInfos;           // Write operations in progress.
-  DUMP_WRITER_BUFFER_INFO * volatile    pFirstCompletedBufferInfo; // Linked-list of completed buffer infos ready to be flushed into pFirstFreeBufferInfo.
+  ODW_BUFFER_INFO              *pCurrentBufferInfo;       // Filled up to CurrentBufferInfoUsed.
+  ODW_BUFFER_INFO              *pFirstFreeBufferInfo;     // Linked-list of empty buffer infos.
+  UINT32 volatile              BusyBufferInfos;           // Write operations in progress.
+  ODW_BUFFER_INFO *volatile    pFirstCompletedBufferInfo; // Linked-list of completed buffer infos ready to be flushed into pFirstFreeBufferInfo.
 };
 
-struct DUMP_WRITER_BUFFER_INFO {
-  DUMP_WRITER_BUFFER_INFO    *pNext;       // Linked-list entry. Set to Self if in-flight.
-  DUMP_WRITER                *pDumpWriter; // Parent.
-  UINT8                      *pBuffer;     // Size is pDumpWriter->BufferSize, which must be a multiple of BlockSize.
-  EFI_BLOCK_IO2_TOKEN        Token;        // Invokes DumpWriterOperationComplete when the operation completes.
+struct ODW_BUFFER_INFO {
+  ODW_BUFFER_INFO        *pNext;       // Linked-list entry. Set to Self if in-flight.
+  OFFLINE_DUMP_WRITER    *pDumpWriter; // Parent.
+  UINT8                  *pBuffer;     // Size is pDumpWriter->BufferSize, which must be a multiple of BlockSize.
+  EFI_BLOCK_IO2_TOKEN    Token;        // Invokes OfflineDumpWriterOperationComplete when the operation completes.
 };
 
 // Returns false for overflow.
 static BOOLEAN
-DW_CheckedAdd32 (
+ODW_CheckedAdd32 (
   IN OUT UINT32  *Accumulator,
   UINT32         Addend
   )
@@ -78,21 +78,22 @@ DW_CheckedAdd32 (
 }
 
 static void
-DW_BufferListInterlockedPush (
-  IN OUT DUMP_WRITER_BUFFER_INFO * volatile  *ppFirst,
-  IN OUT DUMP_WRITER_BUFFER_INFO             *pItem
+ODW_BufferListInterlockedPush (
+  IN OUT ODW_BUFFER_INFO *volatile  *ppFirst,
+  IN OUT ODW_BUFFER_INFO            *pItem
   )
 {
   ASSERT (pItem->pNext == NULL);
 
-  DUMP_WRITER_BUFFER_INFO  *pExpectedFirst = *ppFirst;
-  for ( ;;) {
+  ODW_BUFFER_INFO  *pExpectedFirst = *ppFirst;
+
+  for ( ; ;) {
     pItem->pNext = pExpectedFirst;
 
     // Interlocked: *ppFirst = pItem;
-    DUMP_WRITER_BUFFER_INFO * const  pActualFirst =
+    ODW_BUFFER_INFO *const  pActualFirst =
       InterlockedCompareExchangePointer (
-                                         (void * volatile *)ppFirst,
+                                         (void *volatile *)ppFirst,
                                          pExpectedFirst,
                                          pItem
                                          );
@@ -104,18 +105,18 @@ DW_BufferListInterlockedPush (
   }
 }
 
-static DUMP_WRITER_BUFFER_INFO *
-DW_BufferListInterlockedFlush (
-  IN OUT DUMP_WRITER_BUFFER_INFO * volatile  *ppFirst
+static ODW_BUFFER_INFO *
+ODW_BufferListInterlockedFlush (
+  IN OUT ODW_BUFFER_INFO *volatile  *ppFirst
   )
 {
-  DUMP_WRITER_BUFFER_INFO  *pExpectedFirst = *ppFirst;
+  ODW_BUFFER_INFO  *pExpectedFirst = *ppFirst;
 
   while (pExpectedFirst) {
     // Interlocked: *ppFirst = NULL;
-    DUMP_WRITER_BUFFER_INFO * const  pActualFirst =
+    ODW_BUFFER_INFO *const  pActualFirst =
       InterlockedCompareExchangePointer (
-                                         (void * volatile *)ppFirst,
+                                         (void *volatile *)ppFirst,
                                          pExpectedFirst,
                                          NULL
                                          );
@@ -131,12 +132,12 @@ DW_BufferListInterlockedFlush (
 }
 
 static void EFIAPI
-DW_BufferInfoOperationComplete (
+ODW_BufferInfoOperationComplete (
   IN EFI_EVENT  Event,
   IN VOID       *pContext
   )
 {
-  DUMP_WRITER_BUFFER_INFO * const  pComplete = (DUMP_WRITER_BUFFER_INFO *)pContext;
+  ODW_BUFFER_INFO *const  pComplete = (ODW_BUFFER_INFO *)pContext;
 
   ASSERT (pComplete->pNext == pComplete); // In-flight.
   pComplete->pNext = NULL;
@@ -144,9 +145,11 @@ DW_BufferInfoOperationComplete (
   // Move info from BusyBufferInfos to CompletedBufferInfos.
   // In theory, the callback can't be interrupted (runs at TPL_CALLBACK) so this doesn't
   // need to be interlocked. However, it does need to be interlocked on the other end.
-  DUMP_WRITER * const  pDumpWriter = pComplete->pDumpWriter;
-  DW_BufferListInterlockedPush (&pDumpWriter->pFirstCompletedBufferInfo, pComplete);
+  OFFLINE_DUMP_WRITER *const  pDumpWriter = pComplete->pDumpWriter;
+
+  ODW_BufferListInterlockedPush (&pDumpWriter->pFirstCompletedBufferInfo, pComplete);
   UINT32  NewBusyCount = InterlockedDecrement (&pDumpWriter->BusyBufferInfos);
+
   DEBUG_PRINT (DEBUG_INFO, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
 
   // Protected (runs at TPL_CALLBACK). If this were actually multi-threaded, the info
@@ -156,8 +159,8 @@ DW_BufferInfoOperationComplete (
 }
 
 static void
-DW_BufferInfoDestruct (
-  IN OUT DUMP_WRITER_BUFFER_INFO  *pBufferInfo
+ODW_BufferInfoDestruct (
+  IN OUT ODW_BUFFER_INFO  *pBufferInfo
   )
 {
   ASSERT (pBufferInfo->pNext != pBufferInfo); // Not in-flight.
@@ -174,10 +177,10 @@ DW_BufferInfoDestruct (
 }
 
 static EFI_STATUS
-DW_BufferInfoConstruct (
-  IN DUMP_WRITER                  *pDumpWriter,
-  IN UINT32                       MediaIoAlign,
-  IN OUT DUMP_WRITER_BUFFER_INFO  *pBufferInfo
+ODW_BufferInfoConstruct (
+  IN OFFLINE_DUMP_WRITER  *pDumpWriter,
+  IN UINT32               MediaIoAlign,
+  IN OUT ODW_BUFFER_INFO  *pBufferInfo
   )
 {
   // Caller should allocate zeroed memory.
@@ -198,7 +201,7 @@ DW_BufferInfoConstruct (
   Status = gBS->CreateEvent (
                              EVT_NOTIFY_SIGNAL,
                              TPL_CALLBACK,
-                             DW_BufferInfoOperationComplete,
+                             ODW_BufferInfoOperationComplete,
                              pBufferInfo,
                              &pBufferInfo->Token.Event
                              );
@@ -212,9 +215,9 @@ DW_BufferInfoConstruct (
 }
 
 static void
-DW_PushFreeBuffer (
-  IN OUT DUMP_WRITER              *pDumpWriter,
-  IN OUT DUMP_WRITER_BUFFER_INFO  *pFreeItem
+ODW_PushFreeBuffer (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter,
+  IN OUT ODW_BUFFER_INFO      *pFreeItem
   )
 {
   ASSERT (pFreeItem->pNext == NULL);
@@ -227,22 +230,22 @@ DW_PushFreeBuffer (
 }
 
 static void
-DW_WaitForFreeBuffer (
-  IN OUT DUMP_WRITER  *pDumpWriter
+ODW_WaitForFreeBuffer (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   )
 {
   // Loop until we flush at least one buffer from completed list to free list.
-  for ( ;;) {
+  for ( ; ;) {
     ASSERT (!pDumpWriter->pFirstFreeBufferInfo);
 
     // Flush the completed buffer list.
-    DUMP_WRITER_BUFFER_INFO  *pFirstCompleted =
-      DW_BufferListInterlockedFlush (&pDumpWriter->pFirstCompletedBufferInfo);
+    ODW_BUFFER_INFO  *pFirstCompleted =
+      ODW_BufferListInterlockedFlush (&pDumpWriter->pFirstCompletedBufferInfo);
     if (pFirstCompleted) {
       // Flushed one or more buffers from completed buffer list.
       // Add them to the free list.
       do {
-        DUMP_WRITER_BUFFER_INFO * const  pFreeItem = pFirstCompleted;
+        ODW_BUFFER_INFO *const  pFreeItem = pFirstCompleted;
         pFirstCompleted  = pFreeItem->pNext;
         pFreeItem->pNext = NULL;
 
@@ -253,7 +256,7 @@ DW_WaitForFreeBuffer (
 
         pFreeItem->Token.TransactionStatus = EFI_SUCCESS;
 
-        DW_PushFreeBuffer (pDumpWriter, pFreeItem);
+        ODW_PushFreeBuffer (pDumpWriter, pFreeItem);
       } while (pFirstCompleted);
 
       // Flushed something so we're done.
@@ -267,15 +270,15 @@ DW_WaitForFreeBuffer (
   }
 }
 
-static DUMP_WRITER_BUFFER_INFO *
-DW_GetFreeBuffer (
-  IN OUT DUMP_WRITER  *pDumpWriter
+static ODW_BUFFER_INFO *
+ODW_GetFreeBuffer (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   )
 {
-  DUMP_WRITER_BUFFER_INFO  *pFreeBuffer = pDumpWriter->pFirstFreeBufferInfo;
+  ODW_BUFFER_INFO  *pFreeBuffer = pDumpWriter->pFirstFreeBufferInfo;
 
   if (!pFreeBuffer) {
-    DW_WaitForFreeBuffer (pDumpWriter);
+    ODW_WaitForFreeBuffer (pDumpWriter);
     pFreeBuffer = pDumpWriter->pFirstFreeBufferInfo;
   }
 
@@ -285,35 +288,35 @@ DW_GetFreeBuffer (
 }
 
 static RAW_DUMP_HEADER *
-DW_DumpHeader (
-  IN DUMP_WRITER const  *pDumpWriter
+ODW_DumpHeader (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
   return (RAW_DUMP_HEADER *)(pDumpWriter->pHeaders + pDumpWriter->RawDumpOffset);
 }
 
 static RAW_DUMP_SECTION_HEADER *
-DW_SectionHeaders (
-  IN DUMP_WRITER const  *pDumpWriter
+ODW_SectionHeaders (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
   return (RAW_DUMP_SECTION_HEADER *)(pDumpWriter->pHeaders + pDumpWriter->RawDumpOffset + sizeof (RAW_DUMP_HEADER));
 }
 
 static void
-DW_CurrentBufferInfoFlush (
-  IN OUT DUMP_WRITER  *pDumpWriter
+ODW_CurrentBufferInfoFlush (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   )
 {
   if (pDumpWriter->MediaSize > pDumpWriter->FlushedMediaPosition) {
     UINT64 const  MediaRemaining = pDumpWriter->MediaSize - pDumpWriter->FlushedMediaPosition;
-    
-    DUMP_WRITER_BUFFER_INFO * const  pCurrentBufferInfo    = pDumpWriter->pCurrentBufferInfo;
-    UINT32 const                     CurrentBufferInfoUsed = pDumpWriter->CurrentBufferInfoUsed;
-    UINT32 const                     BytesToWrite          = (UINT32)MIN (MediaRemaining, CurrentBufferInfoUsed);
-    UINT8 const                      MediaBlockShift       = pDumpWriter->MediaBlockShift;
-    UINT8                            *pBuffer              = pCurrentBufferInfo->pBuffer;
-    
+
+    ODW_BUFFER_INFO *const  pCurrentBufferInfo    = pDumpWriter->pCurrentBufferInfo;
+    UINT32 const            CurrentBufferInfoUsed = pDumpWriter->CurrentBufferInfoUsed;
+    UINT32 const            BytesToWrite          = (UINT32)MIN (MediaRemaining, CurrentBufferInfoUsed);
+    UINT8 const             MediaBlockShift       = pDumpWriter->MediaBlockShift;
+    UINT8                   *pBuffer              = pCurrentBufferInfo->pBuffer;
+
     ASSERT (pCurrentBufferInfo);
     ASSERT (CurrentBufferInfoUsed != 0);
     ASSERT (CurrentBufferInfoUsed <= pDumpWriter->BufferSize);
@@ -321,9 +324,9 @@ DW_CurrentBufferInfoFlush (
     ASSERT (BytesToWrite != 0);
     ASSERT (0 == (BytesToWrite & ((1u << MediaBlockShift) - 1)));
     ASSERT (0 == (pDumpWriter->FlushedMediaPosition & ((1u << MediaBlockShift) - 1)));
-    
+
     EFI_STATUS  Status;
-    
+
     if (pDumpWriter->pEncryptor) {
       DEBUG_PRINT (
                    DEBUG_INFO,
@@ -331,28 +334,28 @@ DW_CurrentBufferInfoFlush (
                    BytesToWrite,
                    pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset
                    );
-      Status = EncryptorEncrypt (
-                                 pDumpWriter->pEncryptor,
-                                 pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset,
-                                 BytesToWrite,
-                                 pBuffer,
-                                 pBuffer
-                                 );
+      Status = OfflineDumpEncryptorEncrypt (
+                                            pDumpWriter->pEncryptor,
+                                            pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset,
+                                            BytesToWrite,
+                                            pBuffer,
+                                            pBuffer
+                                            );
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (data) failed: %r\n", Status);
         pDumpWriter->LastWriteError = Status;
         ZeroMem (pBuffer, BytesToWrite);
       }
     }
-    
+
     if (pDumpWriter->pBlockIo2) {
       // Send pCurrentBufferInfo into the void.
       pDumpWriter->pCurrentBufferInfo = NULL;
       pCurrentBufferInfo->pNext       = pCurrentBufferInfo; // In-flight
       UINT32  NewBusyCount = InterlockedIncrement (&pDumpWriter->BusyBufferInfos);
       DEBUG_PRINT (DEBUG_INFO, "PostIncrement BusyBufferInfos = %u\n", NewBusyCount);
-    
-      EFI_BLOCK_IO2_PROTOCOL * const  pBlockIo2 = pDumpWriter->pBlockIo2;
+
+      EFI_BLOCK_IO2_PROTOCOL *const  pBlockIo2 = pDumpWriter->pBlockIo2;
       Status = pBlockIo2->WriteBlocksEx (
                                          pBlockIo2,
                                          pDumpWriter->MediaID,
@@ -371,7 +374,7 @@ DW_CurrentBufferInfoFlush (
         pDumpWriter->LastWriteError = Status;
       }
     } else {
-      EFI_BLOCK_IO_PROTOCOL * const  pBlockIo = pDumpWriter->pBlockIo;
+      EFI_BLOCK_IO_PROTOCOL *const  pBlockIo = pDumpWriter->pBlockIo;
       Status = pBlockIo->WriteBlocks (
                                       pBlockIo,
                                       pDumpWriter->MediaID,
@@ -391,13 +394,13 @@ DW_CurrentBufferInfoFlush (
 }
 
 static void
-DW_Delete (
-  IN OUT DUMP_WRITER  *pDumpWriter
+ODW_Delete (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   )
 {
   ASSERT (pDumpWriter->BusyBufferInfos == 0);
 
-  EncryptorDelete (pDumpWriter->pEncryptor);
+  OfflineDumpEncryptorDelete (pDumpWriter->pEncryptor);
   pDumpWriter->pEncryptor = NULL;
 
   if (pDumpWriter->pHeaders) {
@@ -412,7 +415,7 @@ DW_Delete (
 
   if (pDumpWriter->pBufferInfos) {
     for (UINT32 i = 0; i != pDumpWriter->BufferCount; i += 1) {
-      DW_BufferInfoDestruct (&pDumpWriter->pBufferInfos[i]);
+      ODW_BufferInfoDestruct (&pDumpWriter->pBufferInfos[i]);
     }
 
     FreePool (pDumpWriter->pBufferInfos);
@@ -425,9 +428,9 @@ DW_Delete (
 }
 
 EFI_STATUS
-DumpWriterClose (
-  IN OUT DUMP_WRITER  *pDumpWriter,
-  IN BOOLEAN          DumpValid
+OfflineDumpWriterClose (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter,
+  IN BOOLEAN                  DumpValid
   )
 {
   if (pDumpWriter->CurrentBufferInfoUsed != 0) {
@@ -438,7 +441,7 @@ DumpWriterClose (
              TailSize
              );
     pDumpWriter->CurrentBufferInfoUsed += TailSize;
-    DW_CurrentBufferInfoFlush (pDumpWriter);
+    ODW_CurrentBufferInfoFlush (pDumpWriter);
   }
 
   // Wait for all pending operations to complete.
@@ -453,14 +456,15 @@ DumpWriterClose (
                DEBUG_INFO,
                "Close: LastError=%u MediaSize=%llu NeededSize=%llu\n",
                pDumpWriter->LastWriteError,
-               DumpWriterMediaSize (pDumpWriter),
-               DumpWriterMediaPosition (pDumpWriter)
+               OfflineDumpWriterMediaSize (pDumpWriter),
+               OfflineDumpWriterMediaPosition (pDumpWriter)
                );
 
-  RAW_DUMP_HEADER  *pDumpHeader = DW_DumpHeader (pDumpWriter);
+  RAW_DUMP_HEADER  *pDumpHeader = ODW_DumpHeader (pDumpWriter);
+
   if (EFI_ERROR (pDumpWriter->LastWriteError)) {
     // Do not set any flags (dump invalid).
-  } else if (DumpWriterHasInsufficientStorage (pDumpWriter)) {
+  } else if (OfflineDumpWriterHasInsufficientStorage (pDumpWriter)) {
     pDumpHeader->Flags |= RAW_DUMP_HEADER_INSUFFICIENT_STORAGE;
   } else if (DumpValid) {
     pDumpHeader->Flags |= RAW_DUMP_HEADER_DUMP_VALID;
@@ -471,7 +475,7 @@ DumpWriterClose (
   // TODO: should we flush the headers once without the RAW_DUMP_HEADER_DUMP_VALID bit to
   // ensure headers are fully written, and then make a second write that updates just the
   // valid bit?
-  EFI_STATUS  Status = DumpWriterFlushHeaders (pDumpWriter);
+  EFI_STATUS  Status = OfflineDumpWriterFlushHeaders (pDumpWriter);
 
   if (!EFI_ERROR (Status)) {
     if (pDumpWriter->pBlockIo2) {
@@ -481,17 +485,17 @@ DumpWriterClose (
     }
   }
 
-  DW_Delete (pDumpWriter);
+  ODW_Delete (pDumpWriter);
   return Status;
 }
 
 EFI_STATUS
-DumpWriterOpen (
-  IN EFI_HANDLE                 DumpDeviceHandle,
-  IN RAW_DUMP_HEADER_FLAGS      DumpHeaderFlags,
-  IN UINT32                     SectionCountExpected,
-  IN DUMP_WRITER_OPTIONS const  *pOptions,
-  OUT DUMP_WRITER               **ppDumpWriter
+OfflineDumpWriterOpen (
+  IN EFI_HANDLE                         DumpDeviceHandle,
+  IN RAW_DUMP_HEADER_FLAGS              DumpHeaderFlags,
+  IN UINT32                             SectionCountExpected,
+  IN OFFLINE_DUMP_WRITER_OPTIONS const  *pOptions,
+  OUT OFFLINE_DUMP_WRITER               **ppDumpWriter
   )
 {
   static const RAW_DUMP_HEADER_FLAGS  RawDumpHeaderInvalidFlags =
@@ -506,16 +510,16 @@ DumpWriterOpen (
     return EFI_INVALID_PARAMETER;
   }
 
-  EFI_STATUS         Status;
-  DUMP_WRITER        *pDumpWriter;
-  ENC_DUMP_KEY_INFO  *pKeyInfo = NULL;
-  UINT32             MediaIoAlign;
+  EFI_STATUS           Status;
+  OFFLINE_DUMP_WRITER  *pDumpWriter;
+  ENC_DUMP_KEY_INFO    *pKeyInfo = NULL;
+  UINT32               MediaIoAlign;
 
   // pDumpWriter, SectionCountExpected, OperationCompleted
   {
     pDumpWriter = AllocateZeroPool (sizeof (*pDumpWriter));
     if (!pDumpWriter) {
-      DEBUG_PRINT (DEBUG_ERROR, "Failed to allocate memory for DUMP_WRITER\n");
+      DEBUG_PRINT (DEBUG_ERROR, "Failed to allocate memory for OFFLINE_DUMP_WRITER\n");
       Status = EFI_OUT_OF_RESOURCES;
       goto Done;
     }
@@ -537,7 +541,7 @@ DumpWriterOpen (
     if (pOptions && pOptions->ForceUnencrypted) {
       EncDumpAlgorithm = ENC_DUMP_ALGORITHM_NONE;
     } else {
-      Status = OfflineMemoryDumpEncryptionAlgorithm (&EncDumpAlgorithm);
+      Status = GetVariableOfflineMemoryDumpEncryptionAlgorithm (&EncDumpAlgorithm);
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "Failed %r to read EncryptionAlgorithm\n", Status);
         goto Done;
@@ -547,19 +551,19 @@ DumpWriterOpen (
     if (EncDumpAlgorithm != ENC_DUMP_ALGORITHM_NONE) {
       void    *pRecipientCertificate   = NULL;
       UINT32  RecipientCertificateSize = 0;
-      Status = OfflineMemoryDumpEncryptionPublicKey (&pRecipientCertificate, &RecipientCertificateSize);
+      Status = GetVariableOfflineMemoryDumpEncryptionPublicKey (&pRecipientCertificate, &RecipientCertificateSize);
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "Failed %r to read PublicKey\n", Status);
         goto Done;
       }
 
-      Status = EncryptorNewKeyInfoBlock (
-                                         EncDumpAlgorithm,
-                                         pRecipientCertificate,
-                                         RecipientCertificateSize,
-                                         &pDumpWriter->pEncryptor,
-                                         &pKeyInfo
-                                         );
+      Status = OfflineDumpEncryptorNewKeyInfoBlock (
+                                                    EncDumpAlgorithm,
+                                                    pRecipientCertificate,
+                                                    RecipientCertificateSize,
+                                                    &pDumpWriter->pEncryptor,
+                                                    &pKeyInfo
+                                                    );
       FreePool (pRecipientCertificate);
 
       if (EFI_ERROR (Status)) {
@@ -626,6 +630,7 @@ DumpWriterOpen (
   }
 
   UINT32 const  BufferAlignment = MAX (EFI_PAGE_SIZE, 1u << pDumpWriter->MediaBlockShift);
+
   DEBUG_PRINT (DEBUG_INFO, "BufferAlignment: %u\n", BufferAlignment);
 
   // pHeaders, HeadersSize, RawDumpOffset, FlushedMediaPosition
@@ -637,14 +642,14 @@ DumpWriterOpen (
     if (pKeyInfo) {
       HeadersSize += sizeof (ENC_DUMP_HEADER);
 
-      if (!DW_CheckedAdd32 (&HeadersSize, pKeyInfo->BlockSize)) {
+      if (!ODW_CheckedAdd32 (&HeadersSize, pKeyInfo->BlockSize)) {
         DEBUG_PRINT (DEBUG_ERROR, "HeadersSize overflow pKeyInfo->BlockSize\n");
         Status = EFI_BAD_BUFFER_SIZE;
         goto Done;
       }
 
       EncHeaderPadding = ALIGN_VALUE_ADDEND (HeadersSize, SectionAlign);
-      if (!DW_CheckedAdd32 (&HeadersSize, EncHeaderPadding)) {
+      if (!ODW_CheckedAdd32 (&HeadersSize, EncHeaderPadding)) {
         DEBUG_PRINT (DEBUG_ERROR, "HeadersSize overflow EncHeaderPadding\n");
         Status = EFI_BAD_BUFFER_SIZE;
         goto Done;
@@ -654,19 +659,19 @@ DumpWriterOpen (
     pDumpWriter->RawDumpOffset = HeadersSize;
     ASSERT (pDumpWriter->RawDumpOffset % SectionAlign == 0);
 
-    if (!DW_CheckedAdd32 (&HeadersSize, sizeof (RAW_DUMP_HEADER))) {
+    if (!ODW_CheckedAdd32 (&HeadersSize, sizeof (RAW_DUMP_HEADER))) {
       DEBUG_PRINT (DEBUG_ERROR, "HeadersSize overflow RAW_DUMP_HEADER\n");
       Status = EFI_BAD_BUFFER_SIZE;
       goto Done;
     }
 
-    if (!DW_CheckedAdd32 (&HeadersSize, SectionHeadersByteCount)) {
+    if (!ODW_CheckedAdd32 (&HeadersSize, SectionHeadersByteCount)) {
       DEBUG_PRINT (DEBUG_ERROR, "HeadersSize overflow SectionHEadersByteCount %u\n", SectionHeadersByteCount);
       Status = EFI_BAD_BUFFER_SIZE;
       goto Done;
     }
 
-    if (!DW_CheckedAdd32 (&HeadersSize, ALIGN_VALUE_ADDEND (HeadersSize, BufferAlignment))) {
+    if (!ODW_CheckedAdd32 (&HeadersSize, ALIGN_VALUE_ADDEND (HeadersSize, BufferAlignment))) {
       DEBUG_PRINT (DEBUG_ERROR, "HeadersSize overflow Alignment %u\n", ALIGN_VALUE_ADDEND (HeadersSize, BufferAlignment));
       Status = EFI_BAD_BUFFER_SIZE;
       goto Done;
@@ -678,7 +683,7 @@ DumpWriterOpen (
       goto Done;
     }
 
-    UINT8 * const  pHeaders = AllocateAlignedPages (EFI_SIZE_TO_PAGES (HeadersSize), MediaIoAlign);
+    UINT8 *const  pHeaders = AllocateAlignedPages (EFI_SIZE_TO_PAGES (HeadersSize), MediaIoAlign);
     if (!pHeaders) {
       DEBUG_PRINT (
                    DEBUG_ERROR,
@@ -726,7 +731,7 @@ DumpWriterOpen (
       .TotalDumpSizeRequired = HeadersSize,
       .SectionsCount         = 0,
     };
-    (void)OfflineMemoryDumpOsData (&pDumpHeader->OsData);
+    (void)GetVariableOfflineMemoryDumpOsData (&pDumpHeader->OsData);
 
     pHeadersPos += sizeof (RAW_DUMP_HEADER);
     pHeadersPos += SectionHeadersByteCount;
@@ -789,30 +794,30 @@ DumpWriterOpen (
 
     pDumpWriter->BufferSize   = BufferSize;
     pDumpWriter->BufferCount  = BufferCount;
-    pDumpWriter->pBufferInfos = AllocateZeroPool (BufferCount * sizeof (DUMP_WRITER_BUFFER_INFO));
+    pDumpWriter->pBufferInfos = AllocateZeroPool (BufferCount * sizeof (ODW_BUFFER_INFO));
     if (!pDumpWriter->pBufferInfos) {
       DEBUG_PRINT (
                    DEBUG_ERROR,
                    "Failed to allocate %u BufferInfo bytes\n",
-                   BufferCount * sizeof (DUMP_WRITER_BUFFER_INFO)
+                   BufferCount * sizeof (ODW_BUFFER_INFO)
                    );
       Status = EFI_OUT_OF_RESOURCES;
       goto Done;
     }
 
     for (unsigned i = 0; i != BufferCount; i += 1) {
-      DUMP_WRITER_BUFFER_INFO * const  pInfo = &pDumpWriter->pBufferInfos[i];
-      Status = DW_BufferInfoConstruct (pDumpWriter, MediaIoAlign, pInfo);
+      ODW_BUFFER_INFO *const  pInfo = &pDumpWriter->pBufferInfos[i];
+      Status = ODW_BufferInfoConstruct (pDumpWriter, MediaIoAlign, pInfo);
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "Failed %r constructing BufferInfo %u\n", Status, i);
         goto Done;
       }
 
-      DW_PushFreeBuffer (pDumpWriter, pInfo);
+      ODW_PushFreeBuffer (pDumpWriter, pInfo);
     }
   }
 
-  Status = DumpWriterFlushHeaders (pDumpWriter);
+  Status = OfflineDumpWriterFlushHeaders (pDumpWriter);
 
 Done:
 
@@ -821,7 +826,7 @@ Done:
   }
 
   if (EFI_ERROR (Status) && pDumpWriter) {
-    DW_Delete (pDumpWriter);
+    ODW_Delete (pDumpWriter);
     pDumpWriter = NULL;
   }
 
@@ -830,61 +835,61 @@ Done:
 }
 
 EFI_STATUS
-DumpWriterLastWriteError (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterLastWriteError (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
   return pDumpWriter->LastWriteError;
 }
 
 UINT64
-DumpWriterMediaPosition (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterMediaPosition (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
   return pDumpWriter->FlushedMediaPosition + pDumpWriter->CurrentBufferInfoUsed;
 }
 
 UINT64
-DumpWriterMediaSize (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterMediaSize (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
   return pDumpWriter->MediaSize;
 }
 
 BOOLEAN
-DumpWriterHasInsufficientStorage (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterHasInsufficientStorage (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
-  return DumpWriterMediaSize (pDumpWriter) < DumpWriterMediaPosition (pDumpWriter);
+  return OfflineDumpWriterMediaSize (pDumpWriter) < OfflineDumpWriterMediaPosition (pDumpWriter);
 }
 
 RAW_DUMP_HEADER const *
-DumpWriterGetDumpHeader (
-  IN DUMP_WRITER const  *pDumpWriter
+OfflineDumpWriterGetDumpHeader (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   )
 {
-  return DW_DumpHeader (pDumpWriter);
+  return ODW_DumpHeader (pDumpWriter);
 }
 
 EFI_STATUS
-DumpWriterFlushHeaders (
-  IN OUT DUMP_WRITER  *pDumpWriter
+OfflineDumpWriterFlushHeaders (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   )
 {
   // Note: DumpWriterClose assumes that this does not launch any async operations.
 
-  EFI_STATUS                      Status;
-  EFI_BLOCK_IO2_PROTOCOL * const  pBlockIo2       = pDumpWriter->pBlockIo2;
-  EFI_BLOCK_IO_PROTOCOL * const   pBlockIo        = pDumpWriter->pBlockIo;
-  UINT32 const                    MediaID         = pDumpWriter->MediaID;
-  UINT8 const                     MediaBlockShift = pDumpWriter->MediaBlockShift;
+  EFI_STATUS                     Status;
+  EFI_BLOCK_IO2_PROTOCOL *const  pBlockIo2       = pDumpWriter->pBlockIo2;
+  EFI_BLOCK_IO_PROTOCOL *const   pBlockIo        = pDumpWriter->pBlockIo;
+  UINT32 const                   MediaID         = pDumpWriter->MediaID;
+  UINT8 const                    MediaBlockShift = pDumpWriter->MediaBlockShift;
 
-  DUMP_WRITER_BUFFER_INFO  *pBufferInfo;
-  UINT8                    *pDest;
-  UINT32                   DestSize;
+  ODW_BUFFER_INFO  *pBufferInfo;
+  UINT8            *pDest;
+  UINT32           DestSize;
 
   if (pBlockIo2) {
     // Async I/O means there's at least 2 buffers.
@@ -892,7 +897,7 @@ DumpWriterFlushHeaders (
     // At least one will be free or in-flight (which we will wait for).
     ASSERT (!pDumpWriter->pHeadersSync);
     ASSERT (pDumpWriter->HeadersSyncSize == 0);
-    pBufferInfo = DW_GetFreeBuffer (pDumpWriter);
+    pBufferInfo = ODW_GetFreeBuffer (pDumpWriter);
     pDest       = pBufferInfo->pBuffer;
     DestSize    = pDumpWriter->BufferSize;
   } else {
@@ -908,6 +913,7 @@ DumpWriterFlushHeaders (
 
   UINT32 const  HeadersSize = pDumpWriter->HeadersSize;
   UINT32        Pos         = 0;
+
   while (Pos < HeadersSize) {
     UINT32 const  ThisBlockSize = MIN (DestSize, HeadersSize - Pos);
     UINT32 const  EndPos        = Pos + ThisBlockSize;
@@ -924,13 +930,13 @@ DumpWriterFlushHeaders (
                    ThisBlockSize - EncryptStart,
                    Pos + EncryptStart - pDumpWriter->RawDumpOffset
                    );
-      Status = EncryptorEncrypt (
-                                 pDumpWriter->pEncryptor,
-                                 Pos + EncryptStart - pDumpWriter->RawDumpOffset,
-                                 ThisBlockSize - EncryptStart,
-                                 pDest + EncryptStart,
-                                 pDest + EncryptStart
-                                 );
+      Status = OfflineDumpEncryptorEncrypt (
+                                            pDumpWriter->pEncryptor,
+                                            Pos + EncryptStart - pDumpWriter->RawDumpOffset,
+                                            ThisBlockSize - EncryptStart,
+                                            pDest + EncryptStart,
+                                            pDest + EncryptStart
+                                            );
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (headers) failed: %r\n", Status);
         break;
@@ -952,15 +958,15 @@ DumpWriterFlushHeaders (
 
   // Return the async buffer if we used it.
   if (pBufferInfo) {
-    DW_PushFreeBuffer (pDumpWriter, pBufferInfo);
+    ODW_PushFreeBuffer (pDumpWriter, pBufferInfo);
   }
 
   return Status;
 }
 
 EFI_STATUS
-DumpWriterWriteSection (
-  IN OUT DUMP_WRITER                     *pDumpWriter,
+OfflineDumpWriterWriteSection (
+  IN OUT OFFLINE_DUMP_WRITER             *pDumpWriter,
   IN RAW_DUMP_SECTION_HEADER_FLAGS       SectionHeaderFlags,
   IN UINT16                              MajorVersion,
   IN UINT16                              MinorVersion,
@@ -975,10 +981,10 @@ DumpWriterWriteSection (
   static const RAW_DUMP_SECTION_HEADER_FLAGS  RawDumpSectionHeaderInvalidFlags =
     RAW_DUMP_SECTION_HEADER_INSUFFICIENT_STORAGE;
 
-  RAW_DUMP_HEADER * const  pDumpHeader   = DW_DumpHeader (pDumpWriter);
-  UINT32 const             SectionsCount = pDumpHeader->SectionsCount;
+  RAW_DUMP_HEADER *const  pDumpHeader   = ODW_DumpHeader (pDumpWriter);
+  UINT32 const            SectionsCount = pDumpHeader->SectionsCount;
 
-  ASSERT (pDumpHeader->TotalDumpSizeRequired == DumpWriterMediaPosition (pDumpWriter));
+  ASSERT (pDumpHeader->TotalDumpSizeRequired == OfflineDumpWriterMediaPosition (pDumpWriter));
 
   if ((0 != (SectionHeaderFlags & RawDumpSectionHeaderInvalidFlags)) ||
       !pInformation ||
@@ -991,13 +997,14 @@ DumpWriterWriteSection (
     return EFI_BUFFER_TOO_SMALL;
   }
 
-  RAW_DUMP_SECTION_HEADER * const  pSectionHeader = DW_SectionHeaders (pDumpWriter) + SectionsCount;
+  RAW_DUMP_SECTION_HEADER *const  pSectionHeader = ODW_SectionHeaders (pDumpWriter) + SectionsCount;
+
   *pSectionHeader = (RAW_DUMP_SECTION_HEADER) {
     .Flags        = SectionHeaderFlags & ~RAW_DUMP_SECTION_HEADER_DUMP_VALID,
     .MajorVersion = MajorVersion,
     .MinorVersion = MinorVersion,
     .Type         = Type,
-    .Offset       = DumpWriterMediaPosition (pDumpWriter) - pDumpWriter->RawDumpOffset,
+    .Offset       = OfflineDumpWriterMediaPosition (pDumpWriter) - pDumpWriter->RawDumpOffset,
     .Size         = 0,
     .Information  = *pInformation,
     .Name         = { 0 }
@@ -1005,6 +1012,7 @@ DumpWriterWriteSection (
 
   // Copy pName into pSectionHeader->Name, truncating if necessary.
   UINTN const  NameLen = AsciiStrnSizeS (pName, sizeof (pSectionHeader->Name) - 1);
+
   ASSERT (NameLen <= sizeof (pSectionHeader->Name));
   CopyMem (pSectionHeader->Name, pName, NameLen); // May not be null-terminated.
 
@@ -1013,21 +1021,22 @@ DumpWriterWriteSection (
 
   BOOLEAN  SectionValid = 0 != (SectionHeaderFlags & RAW_DUMP_SECTION_HEADER_DUMP_VALID);
   UINTN    Pos          = 0;
+
   while (DataSize > Pos) {
     ASSERT (Pos % 16 == 0);
 
     if (pDumpWriter->pCurrentBufferInfo) {
-        ASSERT(pDumpWriter->CurrentBufferInfoUsed < pDumpWriter->BufferSize);
+      ASSERT (pDumpWriter->CurrentBufferInfoUsed < pDumpWriter->BufferSize);
     } else {
       ASSERT (pDumpWriter->CurrentBufferInfoUsed == 0);
-      pDumpWriter->pCurrentBufferInfo = DW_GetFreeBuffer (pDumpWriter);
+      pDumpWriter->pCurrentBufferInfo = ODW_GetFreeBuffer (pDumpWriter);
     }
 
     UINTN const   Remaining = DataSize - Pos;
     UINT32 const  Capacity  = pDumpWriter->BufferSize - pDumpWriter->CurrentBufferInfoUsed;
     UINT32 const  ToCopy    = (UINT32)MIN (Capacity, Remaining);
 
-    UINT8 * const  DestinationPos = pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed;
+    UINT8 *const  DestinationPos = pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed;
     if (!pDataCallback) {
       // TODO: Optimize this -- we can probably avoid the CopyMem and do the copy as part of the
       // encryption operation.
@@ -1050,7 +1059,7 @@ DumpWriterWriteSection (
 
     if (pDumpWriter->CurrentBufferInfoUsed >= pDumpWriter->BufferSize) {
       ASSERT (pDumpWriter->CurrentBufferInfoUsed == pDumpWriter->BufferSize);
-      DW_CurrentBufferInfoFlush (pDumpWriter);
+      ODW_CurrentBufferInfoFlush (pDumpWriter);
     }
 
     Pos += ToCopy;
@@ -1059,16 +1068,17 @@ DumpWriterWriteSection (
   ASSERT (Pos == DataSize || !SectionValid);
   pSectionHeader->Size = Pos;
 
-  if (DumpWriterHasInsufficientStorage (pDumpWriter)) {
+  if (OfflineDumpWriterHasInsufficientStorage (pDumpWriter)) {
     pSectionHeader->Flags |= RAW_DUMP_SECTION_HEADER_INSUFFICIENT_STORAGE;
   } else if (SectionValid) {
     pSectionHeader->Flags |= RAW_DUMP_SECTION_HEADER_DUMP_VALID;
   }
 
-  ASSERT (pSectionHeader->Size == DumpWriterMediaPosition (pDumpWriter) - pDumpWriter->RawDumpOffset - pSectionHeader->Offset);
+  ASSERT (pSectionHeader->Size == OfflineDumpWriterMediaPosition (pDumpWriter) - pDumpWriter->RawDumpOffset - pSectionHeader->Offset);
 
   // Start next section on a 16-byte boundary.
   UINT32 const  PaddingSize = ALIGN_VALUE_ADDEND (pDumpWriter->CurrentBufferInfoUsed, SectionAlign);
+
   if (PaddingSize != 0) {
     ZeroMem (
              pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed,
@@ -1078,11 +1088,11 @@ DumpWriterWriteSection (
 
     if (pDumpWriter->CurrentBufferInfoUsed >= pDumpWriter->BufferSize) {
       ASSERT (pDumpWriter->CurrentBufferInfoUsed == pDumpWriter->BufferSize);
-      DW_CurrentBufferInfoFlush (pDumpWriter);
+      ODW_CurrentBufferInfoFlush (pDumpWriter);
     }
   }
 
-  pDumpHeader->TotalDumpSizeRequired = DumpWriterMediaPosition (pDumpWriter);
+  pDumpHeader->TotalDumpSizeRequired = OfflineDumpWriterMediaPosition (pDumpWriter);
   pDumpHeader->DumpSize              =
     MIN (pDumpHeader->TotalDumpSizeRequired, pDumpWriter->MediaSize) - pDumpWriter->RawDumpOffset;
   pDumpHeader->SectionsCount = SectionsCount + 1;

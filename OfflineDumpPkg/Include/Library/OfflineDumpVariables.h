@@ -15,19 +15,19 @@ Consumes:
 
 // Returns the value of the OfflineMemoryDumpUseCapability firmware variable.
 EFI_STATUS
-OfflineMemoryDumpUseCapability (
+GetVariableOfflineMemoryDumpUseCapability (
   OUT OFFLINE_DUMP_USE_CAPABILITY_FLAGS  *pFlags
   );
 
 // Returns the value of the OfflineMemoryDumpOsData firmware variable.
 EFI_STATUS
-OfflineMemoryDumpOsData (
+GetVariableOfflineMemoryDumpOsData (
   OUT UINT64  *pOsData
   );
 
 // Returns the value of the OfflineMemoryDumpEncryptionAlgorithm firmware variable.
 EFI_STATUS
-OfflineMemoryDumpEncryptionAlgorithm (
+GetVariableOfflineMemoryDumpEncryptionAlgorithm (
   OUT ENC_DUMP_ALGORITHM  *pAlgorithm
   );
 
@@ -35,7 +35,7 @@ OfflineMemoryDumpEncryptionAlgorithm (
 // The caller is responsible for freeing the RecipientCertificate via
 // FreePool(*ppRecipientCertificate).
 EFI_STATUS
-OfflineMemoryDumpEncryptionPublicKey (
+GetVariableOfflineMemoryDumpEncryptionPublicKey (
   OUT void    **ppRecipientCertificate,
   OUT UINT32  *pRecipientCertificateSize
   );
