@@ -47,7 +47,7 @@ FindOfflineDumpPartitionHandle (
 //   returns EFI_NOT_FOUND.
 EFI_STATUS
 FindOfflineDumpRawBlockDeviceHandleForTesting (
-  OUT EFI_HANDLE  *pOfflineDumpDeviceHandle
+  OUT EFI_HANDLE  *pRawBlockDeviceHandle
   );
 
 #endif // _included_Library_OfflineDumpPartition_h

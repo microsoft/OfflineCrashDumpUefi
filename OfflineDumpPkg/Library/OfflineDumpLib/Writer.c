@@ -13,7 +13,8 @@
 #include <Library/UefiBootServicesTableLib.h>
 
 #include <Library/UefiLib.h>
-#define DEBUG_PRINT(bits, ...)  _DEBUG_PRINT(bits, "ODW: " __VA_ARGS__)
+
+#define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
 static const UINT8   BufferCountDefault       = 8;
 static const UINT32  BufferMemoryLimitDefault = 0x100000; // 1 MB
@@ -150,11 +151,11 @@ ODW_BufferInfoOperationComplete (
   ODW_BufferListInterlockedPush (&pDumpWriter->pFirstCompletedBufferInfo, pComplete);
   UINT32  NewBusyCount = InterlockedDecrement (&pDumpWriter->BusyBufferInfos);
 
-  DEBUG_PRINT (DEBUG_INFO, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
+  DEBUG_PRINT (DEBUG_VERBOSE, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
 
   // Protected (runs at TPL_CALLBACK). If this were actually multi-threaded, the info
   // could be deleted between the InterlockedDecrement and the SignalEvent.
-  DEBUG_PRINT (DEBUG_INFO, "Signal FreeBuffer for %p\n", pContext);
+  DEBUG_PRINT (DEBUG_VERBOSE, "Signal FreeBuffer for %p\n", pContext);
   gBS->SignalEvent (pDumpWriter->OperationCompleted);
 }
 
@@ -192,6 +193,7 @@ ODW_BufferInfoConstruct (
 
   pBufferInfo->pBuffer = AllocateAlignedPages (EFI_SIZE_TO_PAGES (pDumpWriter->BufferSize), MediaIoAlign);
   if (!pBufferInfo->pBuffer) {
+    DEBUG_PRINT (DEBUG_ERROR, "AllocateAlignedPages(BufferSize = %u, %u) failed\n", pDumpWriter->BufferSize, MediaIoAlign);
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -206,6 +208,7 @@ ODW_BufferInfoConstruct (
                              &pBufferInfo->Token.Event
                              );
   if (EFI_ERROR (Status)) {
+    DEBUG_PRINT (DEBUG_ERROR, "CreateEvent failed (%r)\n", Status);
     FreePool (pBufferInfo->pBuffer);
     pBufferInfo->pBuffer = NULL;
     return Status;
@@ -264,9 +267,9 @@ ODW_WaitForFreeBuffer (
     }
 
     // No completed buffers. Wait for signal and try again.
-    DEBUG_PRINT (DEBUG_INFO, "Wait FreeBuffer - begin\n");
+    DEBUG_PRINT (DEBUG_VERBOSE, "Wait FreeBuffer - begin\n");
     gBS->WaitForEvent (1, &pDumpWriter->OperationCompleted, NULL);
-    DEBUG_PRINT (DEBUG_INFO, "Wait FreeBuffer - end\n");
+    DEBUG_PRINT (DEBUG_VERBOSE, "Wait FreeBuffer - end\n");
   }
 }
 
@@ -329,10 +332,10 @@ ODW_CurrentBufferInfoFlush (
 
     if (pDumpWriter->pEncryptor) {
       DEBUG_PRINT (
-                   DEBUG_INFO,
+                   DEBUG_VERBOSE,
                    "Encrypting %u bytes using offset %llu (data)\n",
                    BytesToWrite,
-                   pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset
+                   (long long unsigned)(pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset)
                    );
       Status = OfflineDumpEncryptorEncrypt (
                                             pDumpWriter->pEncryptor,
@@ -342,7 +345,7 @@ ODW_CurrentBufferInfoFlush (
                                             pBuffer
                                             );
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (data) failed: %r\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (data) failed (%r)\n", Status);
         pDumpWriter->LastWriteError = Status;
         ZeroMem (pBuffer, BytesToWrite);
       }
@@ -353,7 +356,7 @@ ODW_CurrentBufferInfoFlush (
       pDumpWriter->pCurrentBufferInfo = NULL;
       pCurrentBufferInfo->pNext       = pCurrentBufferInfo; // In-flight
       UINT32  NewBusyCount = InterlockedIncrement (&pDumpWriter->BusyBufferInfos);
-      DEBUG_PRINT (DEBUG_INFO, "PostIncrement BusyBufferInfos = %u\n", NewBusyCount);
+      DEBUG_PRINT (DEBUG_VERBOSE, "PostIncrement BusyBufferInfos = %u\n", NewBusyCount);
 
       EFI_BLOCK_IO2_PROTOCOL *const  pBlockIo2 = pDumpWriter->pBlockIo2;
       Status = pBlockIo2->WriteBlocksEx (
@@ -365,12 +368,12 @@ ODW_CurrentBufferInfoFlush (
                                          pBuffer
                                          );
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "WriteBlocksEx failed: %r\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "WriteBlocksEx failed (%r)\n", Status);
         // Didn't queue a Write, so callback won't be invoked. Put it back.
         pDumpWriter->pCurrentBufferInfo = pCurrentBufferInfo;
         pCurrentBufferInfo->pNext       = NULL; // Not in-flight
         NewBusyCount                    = InterlockedDecrement (&pDumpWriter->BusyBufferInfos);
-        DEBUG_PRINT (DEBUG_INFO, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
+        DEBUG_PRINT (DEBUG_VERBOSE, "PostDecrement BusyBufferInfos = %u\n", NewBusyCount);
         pDumpWriter->LastWriteError = Status;
       }
     } else {
@@ -383,7 +386,7 @@ ODW_CurrentBufferInfoFlush (
                                       pBuffer
                                       );
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "WriteBlocks failed: %r\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "WriteBlocks failed (%r)\n", Status);
         pDumpWriter->LastWriteError = Status;
       }
     }
@@ -519,7 +522,7 @@ OfflineDumpWriterOpen (
   {
     pDumpWriter = AllocateZeroPool (sizeof (*pDumpWriter));
     if (!pDumpWriter) {
-      DEBUG_PRINT (DEBUG_ERROR, "Failed to allocate memory for OFFLINE_DUMP_WRITER\n");
+      DEBUG_PRINT (DEBUG_ERROR, "AllocateZeroPool(OFFLINE_DUMP_WRITER) failed\n");
       Status = EFI_OUT_OF_RESOURCES;
       goto Done;
     }
@@ -529,7 +532,7 @@ OfflineDumpWriterOpen (
     // Simple event - can wait on it, signal unblocks wait, no callback.
     Status = gBS->CreateEvent (0, 0, NULL, NULL, &pDumpWriter->OperationCompleted);
     if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "Failed %r to CreateEvent for OperationCompleted\n", Status);
+      DEBUG_PRINT (DEBUG_ERROR, "CreateEvent for OperationCompleted failed (%r)\n", Status);
       goto Done;
     }
   }
@@ -543,7 +546,7 @@ OfflineDumpWriterOpen (
     } else {
       Status = GetVariableOfflineMemoryDumpEncryptionAlgorithm (&EncDumpAlgorithm);
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "Failed %r to read EncryptionAlgorithm\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "GetVariable(OfflineMemoryDumpEncryptionAlgorithm) failed (%r)\n", Status);
         goto Done;
       }
     }
@@ -553,7 +556,7 @@ OfflineDumpWriterOpen (
       UINT32  RecipientCertificateSize = 0;
       Status = GetVariableOfflineMemoryDumpEncryptionPublicKey (&pRecipientCertificate, &RecipientCertificateSize);
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "Failed %r to read PublicKey\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "GetVariable(OfflineMemoryDumpEncryptionPublicKey) failed (%r)\n", Status);
         goto Done;
       }
 
@@ -567,7 +570,7 @@ OfflineDumpWriterOpen (
       FreePool (pRecipientCertificate);
 
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "Failed %r EncryptorNewKeyInfoBlock\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "OfflineDumpEncryptorNewKeyInfoBlock failed (%r)\n", Status);
         goto Done;
       }
 
@@ -605,7 +608,7 @@ OfflineDumpWriterOpen (
                                   EFI_OPEN_PROTOCOL_GET_PROTOCOL
                                   );
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "Failed %r OpenProtocol(BlockIo)\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "OpenProtocol(BlockIo) failed (%r)\n", Status);
         goto Done;
       }
 
@@ -614,7 +617,7 @@ OfflineDumpWriterOpen (
 
     // Sanity-check the block size: 512 or larger, and a power of 2.
     if ((pMedia->BlockSize < 512) || ((pMedia->BlockSize & (pMedia->BlockSize - 1)) != 0)) {
-      DEBUG_PRINT (DEBUG_ERROR, "Bad block size %u\n", pMedia->BlockSize);
+      DEBUG_PRINT (DEBUG_ERROR, "BlockIo device has bad block size %u\n", pMedia->BlockSize);
       Status = EFI_UNSUPPORTED;
       goto Done;
     }
@@ -685,12 +688,7 @@ OfflineDumpWriterOpen (
 
     UINT8 *const  pHeaders = AllocateAlignedPages (EFI_SIZE_TO_PAGES (HeadersSize), MediaIoAlign);
     if (!pHeaders) {
-      DEBUG_PRINT (
-                   DEBUG_ERROR,
-                   "Failed to allocate %u headers pages at alignment %u\n",
-                   EFI_SIZE_TO_PAGES (HeadersSize),
-                   MediaIoAlign
-                   );
+      DEBUG_PRINT (DEBUG_ERROR, "AllocateAlignedPages(HeadersSize = %u, %u) failed\n", HeadersSize, MediaIoAlign);
       Status = EFI_OUT_OF_RESOURCES;
       goto Done;
     }
@@ -770,12 +768,7 @@ OfflineDumpWriterOpen (
 
       pDumpWriter->pHeadersSync = AllocateAlignedPages (EFI_SIZE_TO_PAGES (HeadersSyncSize), MediaIoAlign);
       if (!pDumpWriter->pHeadersSync) {
-        DEBUG_PRINT (
-                     DEBUG_ERROR,
-                     "Failed to allocate %u headersSync pages at alignment %u\n",
-                     EFI_SIZE_TO_PAGES (HeadersSyncSize),
-                     MediaIoAlign
-                     );
+        DEBUG_PRINT (DEBUG_ERROR, "AllocateAlignedPages(HeadersSyncSize = %u, %u) failed\n", HeadersSyncSize, MediaIoAlign);
         Status = EFI_OUT_OF_RESOURCES;
         goto Done;
       }
@@ -796,11 +789,7 @@ OfflineDumpWriterOpen (
     pDumpWriter->BufferCount  = BufferCount;
     pDumpWriter->pBufferInfos = AllocateZeroPool (BufferCount * sizeof (ODW_BUFFER_INFO));
     if (!pDumpWriter->pBufferInfos) {
-      DEBUG_PRINT (
-                   DEBUG_ERROR,
-                   "Failed to allocate %u BufferInfo bytes\n",
-                   BufferCount * sizeof (ODW_BUFFER_INFO)
-                   );
+      DEBUG_PRINT (DEBUG_ERROR, "AllocateZeroPool(%u * ODW_BUFFER_INFO) failed\n", BufferCount);
       Status = EFI_OUT_OF_RESOURCES;
       goto Done;
     }
@@ -809,7 +798,6 @@ OfflineDumpWriterOpen (
       ODW_BUFFER_INFO *const  pInfo = &pDumpWriter->pBufferInfos[i];
       Status = ODW_BufferInfoConstruct (pDumpWriter, MediaIoAlign, pInfo);
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "Failed %r constructing BufferInfo %u\n", Status, i);
         goto Done;
       }
 
@@ -925,10 +913,10 @@ OfflineDumpWriterFlushHeaders (
         ? pDumpWriter->RawDumpOffset - Pos
         : 0;
       DEBUG_PRINT (
-                   DEBUG_INFO,
-                   "Encrypting %u bytes using offset %llu (headers)\n",
+                   DEBUG_VERBOSE,
+                   "Encrypting %u bytes using offset %u (headers)\n",
                    ThisBlockSize - EncryptStart,
-                   Pos + EncryptStart - pDumpWriter->RawDumpOffset
+                   (UINT32)(Pos + EncryptStart - pDumpWriter->RawDumpOffset)
                    );
       Status = OfflineDumpEncryptorEncrypt (
                                             pDumpWriter->pEncryptor,
@@ -938,7 +926,7 @@ OfflineDumpWriterFlushHeaders (
                                             pDest + EncryptStart
                                             );
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (headers) failed: %r\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (headers) failed (%r)\n", Status);
         break;
       }
     }

@@ -20,76 +20,6 @@
 #define PcdGetBool(x)  TRUE
 #endif
 
-static EFI_STATUS
-LocateDumpDevice (
-  IN EFI_HANDLE   ImageHandle,
-  OUT EFI_HANDLE  *pBlockDeviceHandle
-  )
-{
-  EFI_STATUS  Status;
-  EFI_HANDLE  BlockDeviceHandle = NULL;
-
-  if (PcdGetBool (PcdOfflineDumpUsePartition)) {
-    // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
-    Status = FindOfflineDumpPartitionHandle (&BlockDeviceHandle);
-    if (EFI_ERROR (Status)) {
-      _DEBUG_PRINT (DEBUG_ERROR, "OD: FindOfflineDumpPartitionHandle() failed (%r)\n", Status);
-    }
-  } else {
-    // For testing on Emulator: Look for raw block device that is not a partition.
-    EFI_HANDLE  *pHandleBuffer = NULL;
-    UINTN       HandleCount    = 0;
-    Status = gBS->LocateHandleBuffer (
-                                      ByProtocol,
-                                      &gEfiBlockIoProtocolGuid,
-                                      NULL,
-                                      &HandleCount,
-                                      &pHandleBuffer
-                                      );
-    if (EFI_ERROR (Status)) {
-      _DEBUG_PRINT (DEBUG_ERROR, "OD: LocateHandleBuffer(BlockIoProtocol) failed (%r)\n", Status);
-    } else {
-      UINT32  BlockDeviceCount = 0;
-      for (UINTN HandleIndex = 0; HandleIndex != HandleCount; HandleIndex += 1) {
-        EFI_PARTITION_INFO_PROTOCOL  *PartitionInfo = NULL;
-        Status = gBS->OpenProtocol (
-                                    pHandleBuffer[HandleIndex],
-                                    &gEfiPartitionInfoProtocolGuid,
-                                    (VOID **)&PartitionInfo,
-                                    ImageHandle,
-                                    NULL,
-                                    EFI_OPEN_PROTOCOL_GET_PROTOCOL
-                                    );
-        if (!EFI_ERROR (Status)) {
-          _DEBUG_PRINT (DEBUG_INFO, "OD: OpenProtocol(PartitionInfoProtocol) succeeded for device %p, so not using it.\n", pHandleBuffer[HandleIndex]);
-          continue;
-        }
-
-        // TODO: Skip if the device contains a valid partition table.
-
-        BlockDeviceCount += 1;
-        BlockDeviceHandle = pHandleBuffer[HandleIndex];
-        _DEBUG_PRINT (DEBUG_INFO, "OD: Device %p is usable (raw device, not a partition)\n", pHandleBuffer[HandleIndex]);
-      }
-
-      FreePool (pHandleBuffer);
-      pHandleBuffer = NULL;
-
-      if (1 == BlockDeviceCount) {
-        ASSERT (BlockDeviceHandle != NULL);
-        Status = EFI_SUCCESS;
-      } else {
-        _DEBUG_PRINT (DEBUG_ERROR, "OD: Expected 1 applicable block device, found %u\n", BlockDeviceCount);
-        BlockDeviceHandle = NULL;
-        Status            = EFI_NOT_FOUND;
-      }
-    }
-  }
-
-  *pBlockDeviceHandle = BlockDeviceHandle;
-  return Status;
-}
-
 static void
 GetLargestConventionalRegion (
   OUT UINT8 const  **ppPhysicalBase,
@@ -114,7 +44,7 @@ GetLargestConventionalRegion (
 
   MemoryMap = AllocatePool (MemoryMapSize);
   if (MemoryMap == NULL) {
-    Print (L"AllocatePool() failed\n");
+    Print (L"AllocatePool(MemoryMapSize = %u) failed\n", MemoryMapSize);
     return;
   }
 
@@ -324,9 +254,13 @@ UefiMain (
 
   GetLargestConventionalRegion (&pPhysicalBase, &PhysicalSize);
 
-  Status = LocateDumpDevice (ImageHandle, &BlockDeviceHandle);
+  Status = PcdGetBool (PcdOfflineDumpUsePartition)
+           // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
+    ? FindOfflineDumpPartitionHandle (&BlockDeviceHandle)
+           // For testing on Emulator: Look for a raw block device that is not a partition.
+    : FindOfflineDumpRawBlockDeviceHandleForTesting (&BlockDeviceHandle);
   if (EFI_ERROR (Status)) {
-    Print (L"LocateDumpDevice() failed (%r)\n", Status);
+    Print (L"Find offline dump device failed (%r)\n", Status);
     goto Done;
   }
 

@@ -119,3 +119,65 @@ FindOfflineDumpPartitionHandle (
   *pOfflineDumpDeviceHandle = OfflineDumpDeviceHandle;
   return Status;
 }
+
+EFI_STATUS
+FindOfflineDumpRawBlockDeviceHandleForTesting (
+  OUT EFI_HANDLE  *pRawBlockDeviceHandle
+  )
+{
+  EFI_STATUS  Status;
+  EFI_HANDLE  RawBlockDeviceHandle  = NULL;
+  EFI_HANDLE  *pBlockIoHandleBuffer = NULL;
+  UINTN       BlockIoHandleCount    = 0;
+
+  Status = gBS->LocateHandleBuffer (
+                                    ByProtocol,
+                                    &gEfiBlockIoProtocolGuid,
+                                    NULL,
+                                    &BlockIoHandleCount,
+                                    &pBlockIoHandleBuffer
+                                    );
+  if (EFI_ERROR (Status)) {
+    DEBUG_PRINT (DEBUG_ERROR, "LocateHandleBuffer(BlockIoProtocol) failed (%r)\n", Status);
+  } else {
+    UINT32  RawBlockDeviceCount = 0;
+    for (UINTN HandleIndex = 0; HandleIndex != BlockIoHandleCount; HandleIndex += 1) {
+      EFI_HANDLE  const  BlockIoHandle = pBlockIoHandleBuffer[HandleIndex];
+
+      EFI_PARTITION_INFO_PROTOCOL  *PartitionInfo = NULL;
+      Status = gBS->OpenProtocol (
+                                  BlockIoHandle,
+                                  &gEfiPartitionInfoProtocolGuid,
+                                  (VOID **)&PartitionInfo,
+                                  gImageHandle,
+                                  NULL,
+                                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+                                  );
+      if (!EFI_ERROR (Status)) {
+        DEBUG_PRINT (DEBUG_INFO, "OpenProtocol(PartitionInfoProtocol) succeeded for device %p, so not using it.\n", BlockIoHandle);
+        continue;
+      }
+
+      // TODO: Skip if the device contains a valid partition table.
+
+      RawBlockDeviceCount += 1;
+      RawBlockDeviceHandle = BlockIoHandle;
+      DEBUG_PRINT (DEBUG_INFO, "Device %p is usable (raw device, not a partition)\n", BlockIoHandle);
+    }
+
+    FreePool (pBlockIoHandleBuffer);
+    pBlockIoHandleBuffer = NULL;
+
+    if (1 != RawBlockDeviceCount) {
+      DEBUG_PRINT (DEBUG_ERROR, "Found %u raw block devices, expected 1\n", RawBlockDeviceCount);
+      RawBlockDeviceHandle = NULL;
+      Status               = EFI_NOT_FOUND;
+    } else {
+      Status = EFI_SUCCESS;
+    }
+  }
+
+  ASSERT ((Status == EFI_SUCCESS) == (RawBlockDeviceHandle != NULL));
+  *pRawBlockDeviceHandle = RawBlockDeviceHandle;
+  return Status;
+}

@@ -75,3 +75,11 @@
     <LibraryClasses>
       RngLib|MdeModulePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
   }
+
+[PcdsFixedAtBuild]
+
+  # INIT, WARN, LOAD, FS, INFO, ERROR
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel  |0x8000004F
+
+  # ASSERT, PRINT, CODE, MEMORY
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask     |0x0F

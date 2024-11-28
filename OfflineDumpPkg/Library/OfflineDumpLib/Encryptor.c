@@ -19,8 +19,12 @@ STATIC_ASSERT (
 #include <openssl/x509.h>                   // CryptoPkg/Library/OpensslLib/openssl/include/...
 #include <openssl/pkcs7.h>                  // CryptoPkg/Library/OpensslLib/openssl/include/...
 
+#include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
+
 #include <Library/BaseCryptLib.h>
+
+#define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
 /*
 Almost-useful functions from BaseCryptLib.h:
@@ -84,18 +88,23 @@ OfflineDumpEncryptorNewAes128Ctr (
   OFFLINE_DUMP_ENCRYPTOR  *pNewEncryptor = AllocatePool (sizeof (*pNewEncryptor));
 
   if (pNewEncryptor == NULL) {
+    DEBUG_PRINT (DEBUG_ERROR, "AllocatePool(OFFLINE_DUMP_ENCRYPTOR) failed\n");
     return EFI_OUT_OF_RESOURCES;
   }
 
   pNewEncryptor->pCipherCtx = EVP_CIPHER_CTX_new ();
   if (pNewEncryptor->pCipherCtx == NULL) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_new() failed\n");
     FreePool (pNewEncryptor);
     return EFI_OUT_OF_RESOURCES;
   }
 
-  if (!EVP_EncryptInit (pNewEncryptor->pCipherCtx, EVP_aes_128_ecb (), Key, NULL) ||
-      !EVP_CIPHER_CTX_set_padding (pNewEncryptor->pCipherCtx, 0))
-  {
+  if (!EVP_EncryptInit (pNewEncryptor->pCipherCtx, EVP_aes_128_ecb (), Key, NULL)) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_EncryptInit() failed\n");
+    OfflineDumpEncryptorDelete (pNewEncryptor);
+    return EFI_DEVICE_ERROR;
+  } else if (!EVP_CIPHER_CTX_set_padding (pNewEncryptor->pCipherCtx, 0)) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_set_padding() failed\n");
     OfflineDumpEncryptorDelete (pNewEncryptor);
     return EFI_DEVICE_ERROR;
   }
@@ -120,8 +129,9 @@ OfflineDumpEncryptorNewAes128CtrRandom (
   } RandomData;
 
   if (!RandomBytes ((UINT8 *)&RandomData, sizeof (RandomData))) {
+    DEBUG_PRINT (DEBUG_ERROR, "RandomBytes()  failed\n");
     *ppEncryptor = NULL;
-    return EFI_DEVICE_ERROR;
+    return EFI_NOT_READY;
   }
 
   EFI_STATUS  Status;
@@ -152,6 +162,9 @@ OD_EncryptKeyStreamBuffer (
                                (UINT8 *)pEncryptor->KeyStreamBuffer,
                                InLen
                                );
+  if (!Ok) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_EncryptUpdate() failed\n");
+  }
 
   ASSERT (InLen == OutLen || !Ok);
   return Ok;
@@ -290,12 +303,14 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   ENC_DUMP_KEY_INFO       *pNewKeyInfo   = NULL;
 
   if (Algorithm != ENC_DUMP_ALGORITHM_AES128_CTR) {
+    DEBUG_PRINT (DEBUG_ERROR, "Unsupported Algorithm %u\n", Algorithm);
     Status = EFI_UNSUPPORTED;
     goto Error;
   }
 
   pRecipientStack = sk_X509_new_null ();
   if (!pRecipientStack) {
+    DEBUG_PRINT (DEBUG_ERROR, "sk_X509_new_null() failed\n");
     Status = EFI_OUT_OF_RESOURCES;
     goto Error;
   }
@@ -304,6 +319,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
     UINT8 const  *pRecipientCertificateBytes = pRecipientCertificate;
     X509         *pRecipient                 = d2i_X509 (NULL, &pRecipientCertificateBytes, RecipientCertificateSize);
     if (!pRecipient) {
+      DEBUG_PRINT (DEBUG_ERROR, "d2i_X509() failed\n");
       Status = EFI_INVALID_PARAMETER;
       goto Error;
     }
@@ -313,6 +329,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
 
   pKeyBio = BIO_new (BIO_s_mem ());
   if (!pKeyBio) {
+    DEBUG_PRINT (DEBUG_ERROR, "BIO_new(BIO_s_mem()) failed\n");
     Status = EFI_OUT_OF_RESOURCES;
     goto Error;
   }
@@ -323,12 +340,14 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   }
 
   if (!BIO_write (pKeyBio, pNewEncryptor->Aes128Key, sizeof (pNewEncryptor->Aes128Key))) {
+    DEBUG_PRINT (DEBUG_ERROR, "BIO_write() failed\n");
     Status = EFI_OUT_OF_RESOURCES;
     goto Error;
   }
 
   pPkcs7 = PKCS7_encrypt (pRecipientStack, pKeyBio, EVP_aes_128_cbc (), PKCS7_BINARY);
   if (!pPkcs7) {
+    DEBUG_PRINT (DEBUG_ERROR, "PKCS7_encrypt() failed\n");
     Status = EFI_DEVICE_ERROR;
     goto Error;
   }
@@ -336,6 +355,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   int  Pkcs7Size = i2d_PKCS7 (pPkcs7, NULL);
 
   if (Pkcs7Size <= 0) {
+    DEBUG_PRINT (DEBUG_ERROR, "i2d_PKCS7() failed\n");
     Status = EFI_DEVICE_ERROR;
     goto Error;
   }
@@ -345,6 +365,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   KeyInfoSize = (KeyInfoSize + 7u) & ~7u; // Pad to 8-byte boundary.
   pNewKeyInfo = AllocateZeroPool (KeyInfoSize);
   if (!pNewKeyInfo) {
+    DEBUG_PRINT (DEBUG_ERROR, "AllocateZeroPool(KeyInfoSize = %u) failed\n", KeyInfoSize);
     Status = EFI_OUT_OF_RESOURCES;
     goto Error;
   }
@@ -360,6 +381,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   pKeyInfoData += sizeof (UINT64);
   Pkcs7Size     = i2d_PKCS7 (pPkcs7, &pKeyInfoData);
   if (pNewKeyInfo->EncryptedKeyCmsSize != (UINT32)Pkcs7Size) {
+    DEBUG_PRINT (DEBUG_ERROR, "i2d_PKCS7() returned %d, expected %u\n", Pkcs7Size, pNewKeyInfo->EncryptedKeyCmsSize);
     Status = EFI_DEVICE_ERROR;
     goto Error;
   }
