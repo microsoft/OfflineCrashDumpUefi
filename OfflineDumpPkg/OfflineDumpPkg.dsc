@@ -58,13 +58,13 @@
 
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
 
-  OfflineDumpPkg/Application/OfflineDumpApp/OfflineDumpApp.inf {
+  OfflineDumpPkg/Application/OfflineDumpApp.inf {
     <PcdsFixedAtBuild>
       # For sample, allow use of insecure RngDxe.
       gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE
   }
 
-  OfflineDumpPkg/Application/OfflineDumpBench/OfflineDumpBench.inf {
+  OfflineDumpPkg/Application/OfflineDumpBench.inf {
     <PcdsFixedAtBuild>
       # For benchmark, allow use of insecure RngDxe.
       gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE
