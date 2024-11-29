@@ -43,3 +43,4 @@
 
   gEfiBlockIoProtocolGuid           ## CONSUMES
   gEfiBlockIo2ProtocolGuid          ## CONSUMES
+  gEfiPartitionInfoProtocolGuid     ## CONSUMES

@@ -23,11 +23,9 @@
 
   OfflineDumpLib
 
-  BaseLib
   BaseMemoryLib
   DebugLib
   MemoryAllocationLib
-  PcdLib
   TimerLib
   UefiBootServicesTableLib
   UefiLib

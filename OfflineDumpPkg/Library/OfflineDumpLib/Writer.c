@@ -16,8 +16,8 @@
 
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
-static const UINT8   BufferCountDefault       = 8;
-static const UINT32  BufferMemoryLimitDefault = 0x100000; // 1 MB
+static const UINT8   BufferCountDefault       = 3;
+static const UINT32  BufferMemoryLimitDefault = 0x300000; // 3 MB
 static const UINT32  SectionCountMax          = (0x80000000 - sizeof (RAW_DUMP_HEADER)) / sizeof (RAW_DUMP_SECTION_HEADER);
 static const UINT32  SectionAlign             = 16;
 
@@ -447,6 +447,11 @@ OfflineDumpWriterClose (
     ODW_CurrentBufferInfoFlush (pDumpWriter);
   }
 
+  // Flush the headers once without the RAW_DUMP_HEADER_DUMP_VALID bit to ensure headers
+  // are fully written. This avoids the possibility of a partial write of the headers that
+  // marks the dump as valid without all the headers being written.
+  (void)OfflineDumpWriterFlushHeaders (pDumpWriter); // Best-effort, ignore error here.
+
   // Wait for all pending operations to complete.
   // No more async after this point.
   while (pDumpWriter->BusyBufferInfos != 0) {
@@ -475,9 +480,6 @@ OfflineDumpWriterClose (
     // Do not set any flags (dump invalid).
   }
 
-  // TODO: should we flush the headers once without the RAW_DUMP_HEADER_DUMP_VALID bit to
-  // ensure headers are fully written, and then make a second write that updates just the
-  // valid bit?
   EFI_STATUS  Status = OfflineDumpWriterFlushHeaders (pDumpWriter);
 
   if (!EFI_ERROR (Status)) {

@@ -130,6 +130,10 @@ FindOfflineDumpRawBlockDeviceHandleForTesting (
   EFI_HANDLE  *pBlockIoHandleBuffer = NULL;
   UINTN       BlockIoHandleCount    = 0;
 
+  UINT8   *pBlock0    = NULL;
+  UINT32  Block0Size  = 0;
+  UINT32  Block0Align = 0;
+
   Status = gBS->LocateHandleBuffer (
                                     ByProtocol,
                                     &gEfiBlockIoProtocolGuid,
@@ -144,25 +148,90 @@ FindOfflineDumpRawBlockDeviceHandleForTesting (
     for (UINTN HandleIndex = 0; HandleIndex != BlockIoHandleCount; HandleIndex += 1) {
       EFI_HANDLE  const  BlockIoHandle = pBlockIoHandleBuffer[HandleIndex];
 
-      EFI_PARTITION_INFO_PROTOCOL  *PartitionInfo = NULL;
+      EFI_BLOCK_IO_PROTOCOL  *pBlockIo = NULL;
+      Status = gBS->OpenProtocol (
+                                  BlockIoHandle,
+                                  &gEfiBlockIoProtocolGuid,
+                                  (VOID **)&pBlockIo,
+                                  gImageHandle,
+                                  NULL,
+                                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+                                  );
+      if (EFI_ERROR (Status)) {
+        DEBUG_PRINT (DEBUG_WARN, "OpenProtocol(BlockIoProtocol) failed (%r) for device %p\n", Status, BlockIoHandle);
+        continue;
+      }
+
+      if (pBlockIo->Media->LogicalPartition) {
+        DEBUG_PRINT (DEBUG_INFO, "Device %p is unusable (logical partition)\n", BlockIoHandle);
+        continue;
+      }
+
+      if (pBlockIo->Media->ReadOnly) {
+        DEBUG_PRINT (DEBUG_INFO, "Device %p is unusable (read-only)\n", BlockIoHandle);
+        continue;
+      }
+
+      // Skip if the device contains a valid partition table.
+
+      if ((pBlockIo->Media->BlockSize > Block0Size) ||
+          (pBlockIo->Media->IoAlign > Block0Align))
+      {
+        if (pBlock0) {
+          FreeAlignedPages (pBlock0, EFI_SIZE_TO_PAGES (Block0Size));
+          pBlock0     = 0;
+          Block0Size  = 0;
+          Block0Align = 0;
+        }
+
+        pBlock0 = AllocateAlignedPages (
+                                        EFI_SIZE_TO_PAGES (pBlockIo->Media->BlockSize),
+                                        pBlockIo->Media->IoAlign
+                                        );
+        if (!pBlock0) {
+          DEBUG_PRINT (DEBUG_ERROR, "AllocateAlignedPages(%u, %u) failed\n", pBlockIo->Media->BlockSize, pBlockIo->Media->IoAlign);
+          Status = EFI_OUT_OF_RESOURCES;
+          break;
+        }
+
+        Block0Size  = pBlockIo->Media->BlockSize;
+        Block0Align = pBlockIo->Media->IoAlign;
+      }
+
+      Status = pBlockIo->ReadBlocks (
+                                     pBlockIo,
+                                     pBlockIo->Media->MediaId,
+                                     0,
+                                     Block0Size,
+                                     pBlock0
+                                     );
+      if (EFI_ERROR (Status)) {
+        DEBUG_PRINT (DEBUG_WARN, "ReadBlocks(0) failed (%r) for device %p\n", Status, BlockIoHandle);
+        continue;
+      }
+
+      if ((pBlock0[510] == 0x55) && (pBlock0[511] == 0xAA)) {
+        DEBUG_PRINT (DEBUG_INFO, "Device %p is unusable (contains an MBR)\n", BlockIoHandle);
+        continue;
+      }
+
+      EFI_PARTITION_INFO_PROTOCOL  *pPartitionInfo = NULL;
       Status = gBS->OpenProtocol (
                                   BlockIoHandle,
                                   &gEfiPartitionInfoProtocolGuid,
-                                  (VOID **)&PartitionInfo,
+                                  (VOID **)&pPartitionInfo,
                                   gImageHandle,
                                   NULL,
                                   EFI_OPEN_PROTOCOL_GET_PROTOCOL
                                   );
       if (!EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_INFO, "OpenProtocol(PartitionInfoProtocol) succeeded for device %p, so not using it.\n", BlockIoHandle);
+        DEBUG_PRINT (DEBUG_INFO, "device %p is unusable (has PartitionInfo)\n", BlockIoHandle);
         continue;
       }
 
-      // TODO: Skip if the device contains a valid partition table.
-
       RawBlockDeviceCount += 1;
       RawBlockDeviceHandle = BlockIoHandle;
-      DEBUG_PRINT (DEBUG_INFO, "Device %p is usable (raw device, not a partition)\n", BlockIoHandle);
+      DEBUG_PRINT (DEBUG_INFO, "device %p is USABLE (raw device, not a partition)\n", BlockIoHandle);
     }
 
     FreePool (pBlockIoHandleBuffer);
@@ -175,6 +244,11 @@ FindOfflineDumpRawBlockDeviceHandleForTesting (
     } else {
       Status = EFI_SUCCESS;
     }
+  }
+
+  if (pBlock0) {
+    FreeAlignedPages (pBlock0, EFI_SIZE_TO_PAGES (Block0Size));
+    pBlock0 = NULL;
   }
 
   ASSERT ((Status == EFI_SUCCESS) == (RawBlockDeviceHandle != NULL));

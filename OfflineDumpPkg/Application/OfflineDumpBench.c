@@ -2,17 +2,12 @@
 #include <OfflineDumpPartition.h>
 
 #include <Uefi.h>
-#include <Protocol/BlockIo.h>
-#include <Protocol/PartitionInfo.h>
 #include <Protocol/ShellParameters.h>
 #include <Protocol/Smbios.h>
-#include <Protocol/Rng.h>
 
-#include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
-#include <Library/PcdLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -243,6 +238,7 @@ ShowUsage (
 {
   Print (L"Usage:   bench <DumpSize> [ <BufferMem> <BufferCount> <NoEncrypt> <NoAsync> ]\n");
   Print (L"Example: bench 0x1000000   0x100000     8             0           0\n");
+  // Undocumented 5th parameter: UsePartition
   return EFI_INVALID_PARAMETER;
 }
 

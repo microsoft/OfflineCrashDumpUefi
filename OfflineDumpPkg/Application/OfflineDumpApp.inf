@@ -24,18 +24,10 @@
   OfflineDumpLib
 
   UefiApplicationEntryPoint
-  BaseLib
   BaseMemoryLib
   DebugLib
-  MemoryAllocationLib
-  PcdLib
   UefiBootServicesTableLib
   UefiLib
-
-[Protocols]
-
-  gEfiBlockIoProtocolGuid           ## CONSUMES
-  gEfiPartitionInfoProtocolGuid     ## CONSUMES
 
 [Pcd]
 
