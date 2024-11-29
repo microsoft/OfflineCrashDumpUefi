@@ -1,4 +1,4 @@
-#include <Library/OfflineDumpVariables.h>
+#include <OfflineDumpVariables.h>
 
 #include <Uefi.h>
 #include <Library/MemoryAllocationLib.h>

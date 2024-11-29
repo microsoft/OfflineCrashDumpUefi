@@ -1,5 +1,5 @@
-#include <Library/OfflineDumpWriter.h>
-#include <Library/OfflineDumpPartition.h>
+#include <OfflineDumpWriter.h>
+#include <OfflineDumpPartition.h>
 
 #include <Uefi.h>
 #include <Protocol/BlockIo.h>

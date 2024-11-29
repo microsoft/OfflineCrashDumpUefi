@@ -66,6 +66,12 @@ OfflineDumpEncryptorEncrypt (
   OUT void                   *pOutputData
   );
 
+// Returns the ENC_DUMP_ALGORITHM used by the Encryptor.
+ENC_DUMP_ALGORITHM
+OfflineDumpEncryptorAlgorithm (
+  IN OFFLINE_DUMP_ENCRYPTOR const  *pEncryptor OPTIONAL
+  );
+
 // Creates a new OFFLINE_DUMP_ENCRYPTOR object for AES128-CTR with the specified Key and IV.
 //
 // This function exists primarily for testing purposes. In normal usage, you'll use

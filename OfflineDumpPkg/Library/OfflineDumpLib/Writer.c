@@ -1,6 +1,6 @@
-#include <Library/OfflineDumpWriter.h>
-#include <Library/OfflineDumpEncryptor.h>
-#include <Library/OfflineDumpVariables.h>
+#include <OfflineDumpWriter.h>
+#include <OfflineDumpEncryptor.h>
+#include <OfflineDumpVariables.h>
 
 #include <Uefi.h>
 #include <Protocol/BlockIo.h>
@@ -844,6 +844,41 @@ OfflineDumpWriterMediaSize (
   )
 {
   return pDumpWriter->MediaSize;
+}
+
+// Returns the size of the I/O buffer used by the dump writer.
+UINT32
+OfflineDumpWriterBufferSize (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  )
+{
+  return pDumpWriter->BufferSize;
+}
+
+// Returns the number of I/O buffers used by the dump writer.
+UINT8
+OfflineDumpWriterBufferCount (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  )
+{
+  return pDumpWriter->BufferCount;
+}
+
+// Returns the ENC_DUMP_ALGORITHM used by the dump writer.
+UINT32
+OfflineDumpWriterEncryptionAlgorithm (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  )
+{
+  return OfflineDumpEncryptorAlgorithm (pDumpWriter->pEncryptor);
+}
+
+BOOLEAN
+OfflineDumpWriterUsingBlockIo2 (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  )
+{
+  return pDumpWriter->pBlockIo2 != NULL;
 }
 
 BOOLEAN

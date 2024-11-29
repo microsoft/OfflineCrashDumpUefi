@@ -39,6 +39,7 @@
   gEfiBlockIoProtocolGuid           ## CONSUMES
   gEfiPartitionInfoProtocolGuid     ## CONSUMES
   gEfiShellParametersProtocolGuid   ## CONSUMES
+  gEfiSmbiosProtocolGuid            ## CONSUMES
 
 [Pcd]
 

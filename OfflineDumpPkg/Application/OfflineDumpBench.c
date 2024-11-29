@@ -1,10 +1,11 @@
-#include <Library/OfflineDumpWriter.h>
-#include <Library/OfflineDumpPartition.h>
+#include <OfflineDumpWriter.h>
+#include <OfflineDumpPartition.h>
 
 #include <Uefi.h>
 #include <Protocol/BlockIo.h>
 #include <Protocol/PartitionInfo.h>
 #include <Protocol/ShellParameters.h>
+#include <Protocol/Smbios.h>
 #include <Protocol/Rng.h>
 
 #include <Library/BaseLib.h>
@@ -74,7 +75,6 @@ GetLargestConventionalRegion (
 
   *ppPhysicalBase = (UINT8 const *)(UINTN)LargestPhysicalStart;
   *pSize          = (UINTN)LargestNumberOfPages * EFI_PAGE_SIZE;
-  Print (L"PhysicalBase = %p, Size = 0x%X\n", *ppPhysicalBase, *pSize);
 }
 
 static UINT64
@@ -191,13 +191,58 @@ StrToUint32 (
   return (UINT32)Value;
 }
 
+static void
+PrintPerformanceCounterProperties (
+  void
+  )
+{
+  UINT64  StartValue, EndValue;
+  UINT64  Frequency = GetPerformanceCounterProperties (&StartValue, &EndValue);
+
+  Print (
+         L"Timestamp info: Freq=%llu Start=0x%llX End=0x%llX\n",
+         (unsigned long long)Frequency,
+         (unsigned long long)StartValue,
+         (unsigned long long)EndValue
+         );
+}
+
+static void
+PrintCpuInfo (
+  void
+  )
+{
+  EFI_STATUS           Status;
+  EFI_SMBIOS_PROTOCOL  *pSmbiosProtocol;
+
+  Status = gBS->LocateProtocol (&gEfiSmbiosProtocolGuid, NULL, (void **)&pSmbiosProtocol);
+  if (!EFI_ERROR (Status)) {
+    EFI_SMBIOS_HANDLE  SmbiosHandle = SMBIOS_HANDLE_PI_RESERVED;
+    SMBIOS_TYPE        Type4        = 4;
+    for ( ;;) {
+      EFI_SMBIOS_TABLE_HEADER  *pHeader;
+      Status = pSmbiosProtocol->GetNext (pSmbiosProtocol, &SmbiosHandle, &Type4, &pHeader, NULL);
+      if (EFI_ERROR (Status) || (SmbiosHandle == SMBIOS_HANDLE_PI_RESERVED)) {
+        break;
+      }
+
+      if ((pHeader->Type != Type4) || (pHeader->Length < OFFSET_OF (SMBIOS_TABLE_TYPE4, CoreCount))) {
+        continue;
+      }
+
+      SMBIOS_TABLE_TYPE4 const  *pType4 = (SMBIOS_TABLE_TYPE4 const *)pHeader;
+      Print (L"SMBIOS CPU info: MaxSpeed=%u, CurrentSpeed=%u\n", pType4->MaxSpeed, pType4->CurrentSpeed);
+    }
+  }
+}
+
 static EFI_STATUS
 ShowUsage (
   void
   )
 {
   Print (L"Usage:   bench <DumpSize> [ <BufferMem> <BufferCount> <NoEncrypt> <NoAsync> ]\n");
-  Print (L"Example: bench 0x1000000   0x100000    8             0           0\n");
+  Print (L"Example: bench 0x1000000   0x100000     8             0           0\n");
   return EFI_INVALID_PARAMETER;
 }
 
@@ -208,45 +253,39 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS  Status;
-  EFI_HANDLE  BlockDeviceHandle;
-
-  EFI_SHELL_PARAMETERS_PROTOCOL  *pShellParameters;
-
-  Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, (void **)&pShellParameters);
-  if (EFI_ERROR (Status)) {
-    Print (L"HandleProtocol(ShellParameters) failed (%r)\n", Status);
-    return Status;
-  }
-
-  CHAR16 *const *const  Argv = pShellParameters->Argv;
-  UINTN                 Argc = pShellParameters->Argc;
-  UINTN                 ArgI = 1;
-
-  if (Argc <= ArgI) {
-    return ShowUsage ();
-  }
-
-  BOOLEAN        AllOk       = TRUE;
-  UINT64 const   DumpSize    = StrToUint64 ("DumpSize", Argv[ArgI++], &AllOk);
-  UINT32 const   BufferMem   = Argc <= ArgI ? 0u : StrToUint32 ("BufferMem", Argv[ArgI++], &AllOk);
-  UINT8 const    BufferCount = Argc <= ArgI ? 0u : StrToUint8 ("BufferCount", Argv[ArgI++], &AllOk);
-  BOOLEAN const  NoEncrypt   = Argc <= ArgI ? 0u : StrToBool ("NoEncrypt", Argv[ArgI++], &AllOk);
-  BOOLEAN const  NoAsync     = Argc <= ArgI ? 0u : StrToBool ("NoAsync", Argv[ArgI++], &AllOk);
-
-  if (!AllOk) {
-    return ShowUsage ();
-  }
+  EFI_STATUS                   Status;
+  OFFLINE_DUMP_WRITER_OPTIONS  Options = { 0 };
+  UINT64                       DumpSize;
+  BOOLEAN                      UsePartition;
 
   {
-    UINT64  StartValue, EndValue;
-    UINT64  Frequency = GetPerformanceCounterProperties (&StartValue, &EndValue);
-    Print (
-           L"Timestamp info: Freq=%llu Start=0x%llX End=0x%llX\n",
-           (unsigned long long)Frequency,
-           (unsigned long long)StartValue,
-           (unsigned long long)EndValue
-           );
+    EFI_SHELL_PARAMETERS_PROTOCOL  *pShellParameters;
+
+    Status = gBS->HandleProtocol (gImageHandle, &gEfiShellParametersProtocolGuid, (void **)&pShellParameters);
+    if (EFI_ERROR (Status)) {
+      Print (L"HandleProtocol(ShellParameters) failed (%r)\n", Status);
+      return Status;
+    }
+
+    CHAR16 *const *const  Argv = pShellParameters->Argv;
+    UINTN                 Argc = pShellParameters->Argc;
+    UINTN                 ArgI = 1;
+
+    if (Argc <= ArgI) {
+      return ShowUsage ();
+    }
+
+    BOOLEAN  AllOk = TRUE;
+    DumpSize                  = StrToUint64 ("DumpSize", Argv[ArgI++], &AllOk);
+    Options.BufferMemoryLimit = Argc <= ArgI ? 0u : StrToUint32 ("BufferMem", Argv[ArgI++], &AllOk);
+    Options.BufferCount       = Argc <= ArgI ? 0u : StrToUint8 ("BufferCount", Argv[ArgI++], &AllOk);
+    Options.ForceUnencrypted  = Argc <= ArgI ? 0u : StrToBool ("NoEncrypt", Argv[ArgI++], &AllOk);
+    Options.DisableBlockIo2   = Argc <= ArgI ? 0u : StrToBool ("NoAsync", Argv[ArgI++], &AllOk);
+    UsePartition              = Argc <= ArgI ? PcdGetBool (PcdOfflineDumpUsePartition) : StrToBool ("UsePartition", Argv[ArgI++], &AllOk);
+
+    if (!AllOk) {
+      return ShowUsage ();
+    }
   }
 
   UINT8 const  *pPhysicalBase;
@@ -254,7 +293,9 @@ UefiMain (
 
   GetLargestConventionalRegion (&pPhysicalBase, &PhysicalSize);
 
-  Status = PcdGetBool (PcdOfflineDumpUsePartition)
+  EFI_HANDLE  BlockDeviceHandle;
+
+  Status = UsePartition
            // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
     ? FindOfflineDumpPartitionHandle (&BlockDeviceHandle)
            // For testing on Emulator: Look for a raw block device that is not a partition.
@@ -265,16 +306,9 @@ UefiMain (
   }
 
   UINT32 const  SectionCount = (UINT32)(DumpSize / PhysicalSize + 1);
+  UINT64 const  TimeStart    = GetPerformanceCounter ();
 
-  UINT64 const  TimeStart = GetPerformanceCounter ();
-
-  OFFLINE_DUMP_WRITER_OPTIONS  Options = {
-    .DisableBlockIo2   = NoAsync,
-    .ForceUnencrypted  = NoEncrypt,
-    .BufferCount       = BufferCount,
-    .BufferMemoryLimit = BufferMem
-  };
-  OFFLINE_DUMP_WRITER          *DumpWriter;
+  OFFLINE_DUMP_WRITER  *DumpWriter;
 
   Status = OfflineDumpWriterOpen (
                                   BlockDeviceHandle,
@@ -323,6 +357,10 @@ UefiMain (
   UINT64 const      MediaPos            = OfflineDumpWriterMediaPosition (DumpWriter);
   UINT64 const      MediaSize           = OfflineDumpWriterMediaSize (DumpWriter);
   BOOLEAN  const    InsufficientStorage = OfflineDumpWriterHasInsufficientStorage (DumpWriter);
+  UINT32 const      BufferSize          = OfflineDumpWriterBufferSize (DumpWriter);
+  UINT8 const       BufferCount         = OfflineDumpWriterBufferCount (DumpWriter);
+  UINT32 const      EncryptionAlgorithm = OfflineDumpWriterEncryptionAlgorithm (DumpWriter);
+  BOOLEAN const     IsAsync             = OfflineDumpWriterUsingBlockIo2 (DumpWriter);
 
   Status = OfflineDumpWriterClose (DumpWriter, TRUE);
   if (EFI_ERROR (Status)) {
@@ -351,11 +389,20 @@ UefiMain (
   UINT64 const  TimeNS             = GetTimeInNanoSecond (TimeEnd - TimeStart);
   UINT64 const  KilobytesPerSecond = DumpSize * (1000000000 / 1024) / (TimeNS ? TimeNS : 1);
 
+  PrintPerformanceCounterProperties ();
+  PrintCpuInfo ();
   Print (
-         L"Results: %llu KB, %llu ms, %llu KB/sec\n",
-         (unsigned long long)(DumpSize / 1024),
+         L"Settings: Buffers = %u * %u KB, Encrypt = %u, AsyncIO = %u\n",
+         BufferCount,
+         BufferSize / 1024,
+         EncryptionAlgorithm,
+         IsAsync
+         );
+  Print (
+         L"Results: Data = %u MB, Time = %llu ms, Rate = %u MB/sec\n",
+         (unsigned)(DumpSize / (1024 * 1024)),
          (unsigned long long)(TimeNS / 1000000),
-         (unsigned long long)KilobytesPerSecond
+         (unsigned)(KilobytesPerSecond / 1024)
          );
   Status = EFI_SUCCESS;
 

@@ -60,13 +60,13 @@
 
   OfflineDumpPkg/Application/OfflineDumpApp.inf {
     <PcdsFixedAtBuild>
-      # For sample, allow use of insecure RngDxe.
+      # For sample, allow use of RngDxe based on BaseRngLibTimerLib.
       gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE
   }
 
   OfflineDumpPkg/Application/OfflineDumpBench.inf {
     <PcdsFixedAtBuild>
-      # For benchmark, allow use of insecure RngDxe.
+      # For sample, allow use of RngDxe based on BaseRngLibTimerLib.
       gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE
   }
 

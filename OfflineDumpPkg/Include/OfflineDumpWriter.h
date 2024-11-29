@@ -153,6 +153,30 @@ OfflineDumpWriterMediaSize (
   IN OFFLINE_DUMP_WRITER const  *pDumpWriter
   );
 
+// Returns the size of the I/O buffer used by the dump writer.
+UINT32
+OfflineDumpWriterBufferSize (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  );
+
+// Returns the number of I/O buffers used by the dump writer.
+UINT8
+OfflineDumpWriterBufferCount (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  );
+
+// Returns the ENC_DUMP_ALGORITHM used by the dump writer.
+UINT32
+OfflineDumpWriterEncryptionAlgorithm (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  );
+
+// Returns true if the dump writer is using EFI_BLOCK_IO2_PROTOCOL for async I/O.
+BOOLEAN
+OfflineDumpWriterUsingBlockIo2 (
+  IN OFFLINE_DUMP_WRITER const  *pDumpWriter
+  );
+
 // Returns true if the dump writer has run out of storage space, i.e. returns
 // OfflineDumpWriterMediaSize() < OfflineDumpWriterMediaPosition().
 //

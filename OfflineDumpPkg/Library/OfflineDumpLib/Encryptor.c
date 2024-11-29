@@ -1,4 +1,4 @@
-#include <Library/OfflineDumpEncryptor.h>
+#include <OfflineDumpEncryptor.h>
 
 typedef struct {
   UINT64    Lo;
@@ -283,6 +283,14 @@ OfflineDumpEncryptorEncrypt (
   }
 
   return EFI_SUCCESS;
+}
+
+ENC_DUMP_ALGORITHM
+OfflineDumpEncryptorAlgorithm (
+  IN OFFLINE_DUMP_ENCRYPTOR const  *pEncryptor OPTIONAL
+  )
+{
+  return pEncryptor ? ENC_DUMP_ALGORITHM_AES128_CTR : ENC_DUMP_ALGORITHM_NONE;
 }
 
 EFI_STATUS
