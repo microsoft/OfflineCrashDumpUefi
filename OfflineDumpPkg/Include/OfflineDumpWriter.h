@@ -22,8 +22,8 @@ Consumes:
   OpensslLib
 */
 
-#ifndef _included_Library_OfflineDumpWriter_h
-#define _included_Library_OfflineDumpWriter_h
+#ifndef _included_OfflineDumpWriter_h
+#define _included_OfflineDumpWriter_h
 
 #include <Uefi/UefiBaseType.h>
 #include <Guid/OfflineDumpHeaders.h>
@@ -328,4 +328,4 @@ OfflineDumpWriterWriteSection (
   IN UINTN                               DataSize
   );
 
-#endif // _included_Library_OfflineDumpWriter_h
+#endif // _included_OfflineDumpWriter_h

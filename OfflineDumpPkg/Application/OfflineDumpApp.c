@@ -12,6 +12,12 @@
 #define PcdGetBool(x)  TRUE
 #endif
 
+static CHAR8 const   SectionData[]      = "Hello, World!ABC:123456789abcdef";
+static UINT8 const   SectionDataSizes[] = {
+  0, 1, 15, 16, 17, 23, 24, 25, 31, 32
+};
+static UINT32 const  SectionCount = ARRAY_SIZE (SectionDataSizes);
+
 EFI_STATUS
 EFIAPI
 UefiMain (
@@ -19,9 +25,6 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  static UINT32 const  SectionCount  = 10;
-  static CHAR8 const   SectionData[] = "Hello, World!";
-
   EFI_STATUS  Status;
   EFI_HANDLE  BlockDeviceHandle;
 
@@ -73,7 +76,7 @@ UefiMain (
                                             "SV_SPECIFIC",
                                             NULL,
                                             SectionData,
-                                            sizeof (SectionData)
+                                            SectionDataSizes[SectionIndex]
                                             );
     if (EFI_ERROR (Status)) {
       Print (L"DumpWriterWriteSection() failed (%r)\n", Status);

@@ -7,8 +7,8 @@ Consumes:
   OpensslLib
 */
 
-#ifndef _included_Library_OfflineDumpEncryptor_h
-#define _included_Library_OfflineDumpEncryptor_h
+#ifndef _included_OfflineDumpEncryptor_h
+#define _included_OfflineDumpEncryptor_h
 
 #include <Uefi/UefiBaseType.h>
 #include <Guid/OfflineDumpEncryption.h>
@@ -35,7 +35,7 @@ OfflineDumpEncryptorDelete (
 // 4. Create a ENC_DUMP_KEY_INFO block with the algorithm, IV, and an encrypted key that
 //    can be decrypted with the private key specified in the certificate.
 // 5. Return the Encryptor and KeyInfo block. The caller must free these via
-//    EncryptorAes128CtrDestroy(*ppEncryptor) and FreePool(*ppKeyInfoBlock).
+//    OfflineDumpEncryptorDelete(*ppEncryptor) and FreePool(*ppKeyInfoBlock).
 EFI_STATUS
 OfflineDumpEncryptorNewKeyInfoBlock (
   IN ENC_DUMP_ALGORITHM       Algorithm,
@@ -46,17 +46,17 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   );
 
 // Converts DataSize bytes of plaintext InputData into encrypted OutputData.
+// DataSize and StartingByteOffset must be multiples of 16.
 //
-// StartingByteOffset is the offset of the first byte of InputData relative to the first
-// byte of RAW_DUMP_HEADER.  It is NOT an offset into pInputData or  pOutputData. It is
-// used as input to the encryption process (incorrect offset will result in garbage
-// output).
-//
-// This operation is most efficient when StartingByteOffset and DataSize are multiples of
-// 16 and pInputData and pOutputData are 8-byte aligned. (TODO: Reject unaligned input?)
+// StartingByteOffset is NOT an offset into pInputData or  pOutputData. It is the output
+// offset (in bytes) of pInputData[0] relative to the start of the encrypted data. This
+// value is used as input to the encryption process (incorrect offset will result in
+// garbage output). For example, if encrypting the dump and pInputData points at the
+// RAW_DUMP_HEADER, the StartingByteOffset should be 0, and if encrypting dump section
+// data for a section starting at offset N, the StartingByteOffset should be N.
 //
 // In-place operation is supported, i.e. pInputData and pOutputData may point to the same
-// place.
+// place. Other kinds of overlap between the buffers may have unpredictable results.
 EFI_STATUS
 OfflineDumpEncryptorEncrypt (
   IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
@@ -72,24 +72,4 @@ OfflineDumpEncryptorAlgorithm (
   IN OFFLINE_DUMP_ENCRYPTOR const  *pEncryptor OPTIONAL
   );
 
-// Creates a new OFFLINE_DUMP_ENCRYPTOR object for AES128-CTR with the specified Key and IV.
-//
-// This function exists primarily for testing purposes. In normal usage, you'll use
-// EncryptorNewKeyInfoBlock instead of creating an Encryptor directly.
-EFI_STATUS
-OfflineDumpEncryptorNewAes128Ctr (
-  IN UINT8 const              Key[16],
-  IN UINT64                   IV,
-  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
-  );
-
-// Creates a new OFFLINE_DUMP_ENCRYPTOR object for AES128-CTR with random key and IV.
-//
-// This function exists primarily for testing purposes. In normal usage, you'll use
-// EncryptorNewKeyInfoBlock instead of creating an Encryptor directly.
-EFI_STATUS
-OfflineDumpEncryptorNewAes128CtrRandom (
-  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
-  );
-
-#endif // _included_Library_OfflineDumpEncryptor_h
+#endif // _included_OfflineDumpEncryptor_h

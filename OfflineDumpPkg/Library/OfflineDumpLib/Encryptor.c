@@ -27,6 +27,8 @@ STATIC_ASSERT (
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
 /*
+TODO: Don't depend on private headers from OpenSslLib.
+
 Almost-useful functions from BaseCryptLib.h:
 
 - AesInit
@@ -39,13 +41,13 @@ Almost-useful functions from BaseCryptLib.h:
 
 To be able to use BaseCryptLib.h instead of <openssl/???.h>, we would need:
 
-- AesEcbEncrypt (with ASM optimizations)
-- Pkcs7Encrypt
+- AesEcbEncrypt (AES-NI optimizations are REQUIRED).
+- Pkcs7Encrypt - could be implemented using RsaOaepEncrypt + an ASN.1 writer from somewhere.
 */
 
 enum {
   AES_BLOCK_MASK                = AES_BLOCK_SIZE - 1,
-  KEY_STREAM_BUFFER_SIZE        = 4096,
+  KEY_STREAM_BUFFER_SIZE        = 4 * SIZE_1KB,
   KEY_STREAM_BUFFER_BLOCK_COUNT = KEY_STREAM_BUFFER_SIZE / sizeof (AES_BLOCK)
 };
 
@@ -55,11 +57,129 @@ STATIC_ASSERT (
                );
 
 struct OFFLINE_DUMP_ENCRYPTOR {
-  EVP_CIPHER_CTX    *pCipherCtx;
-  UINT8             Aes128Key[16];
-  UINT64            InitializationVector;
-  AES_BLOCK         KeyStreamBuffer[KEY_STREAM_BUFFER_BLOCK_COUNT];
+  EVP_CIPHER_CTX        *pCipherCtx;
+  UINT64                InitializationVector;
+  ENC_DUMP_ALGORITHM    Algorithm;
+  AES_BLOCK             KeyStreamBuffer[KEY_STREAM_BUFFER_BLOCK_COUNT];
 };
+
+typedef struct ALGORITHM_INFO {
+  ENC_DUMP_ALGORITHM    Algorithm;
+  UINT8                 KeySize;
+  EVP_CIPHER const      *pCipher;
+} ALGORITHM_INFO;
+
+static ALGORITHM_INFO
+OD_GetAlgorithmInfo (
+  IN ENC_DUMP_ALGORITHM  Algorithm
+  )
+{
+  ALGORITHM_INFO  Info = { Algorithm, 0, NULL };
+
+  switch (Algorithm) {
+    default:
+      Info.KeySize = 0;
+      Info.pCipher = NULL;
+      break;
+    case ENC_DUMP_ALGORITHM_AES128_CTR:
+      Info.KeySize = 16;
+      Info.pCipher = EVP_aes_128_ecb ();
+      break;
+    case ENC_DUMP_ALGORITHM_AES192_CTR:
+      Info.KeySize = 24;
+      Info.pCipher = EVP_aes_192_ecb ();
+      break;
+    case ENC_DUMP_ALGORITHM_AES256_CTR:
+      Info.KeySize = 32;
+      Info.pCipher = EVP_aes_256_ecb ();
+      break;
+  }
+
+  return Info;
+}
+
+// Creates a new encryptor for the specified algorithm.
+// Writes key to pKeyBio.
+static EFI_STATUS
+OD_EncryptorNew (
+  IN ALGORITHM_INFO           AlgorithmInfo,
+  IN OUT BIO                  *pKeyBio,
+  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
+  )
+{
+  ASSERT (AlgorithmInfo.pCipher != NULL);
+  ASSERT (pKeyBio != NULL);
+  ASSERT (ppEncryptor != NULL);
+
+  EFI_STATUS              Status;
+  OFFLINE_DUMP_ENCRYPTOR  *pEncryptor = NULL;
+
+  struct ENCRYPTOR_KEY_INFO {
+    UINT64    InitializationVector;
+    UINT8     Key[32];
+  } CtrRandom;
+
+  ASSERT (AlgorithmInfo.KeySize <= sizeof (CtrRandom.Key));
+  if (AlgorithmInfo.KeySize > sizeof (CtrRandom.Key)) {
+    DEBUG_PRINT (
+                 DEBUG_ERROR,
+                 "KeySize %u too large, max supported is %u\n",
+                 AlgorithmInfo.KeySize,
+                 (unsigned)sizeof (CtrRandom.Key)
+                 );
+    Status = EFI_INVALID_PARAMETER;
+    goto Done;
+  }
+
+  if (!RandomBytes ((UINT8 *)&CtrRandom, sizeof (CtrRandom))) {
+    DEBUG_PRINT (DEBUG_ERROR, "RandomBytes() failed\n");
+    Status = EFI_NOT_READY;
+    goto Done;
+  }
+
+  pEncryptor = AllocatePool (sizeof (*pEncryptor));
+  if (pEncryptor == NULL) {
+    DEBUG_PRINT (DEBUG_ERROR, "AllocatePool(OFFLINE_DUMP_ENCRYPTOR) failed\n");
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
+
+  EVP_CIPHER_CTX * const  pCipherCtx = EVP_CIPHER_CTX_new ();
+  if (pCipherCtx == NULL) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_new() failed\n");
+    FreePool (pEncryptor);
+    pEncryptor = NULL;
+    Status     = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
+
+  pEncryptor->pCipherCtx           = pCipherCtx;
+  pEncryptor->InitializationVector = CtrRandom.InitializationVector;
+  pEncryptor->Algorithm            = AlgorithmInfo.Algorithm;
+
+  if (!EVP_EncryptInit (pCipherCtx, AlgorithmInfo.pCipher, CtrRandom.Key, NULL)) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_EncryptInit() failed\n");
+  } else if (!EVP_CIPHER_CTX_set_padding (pCipherCtx, 0)) {
+    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_set_padding() failed\n");
+  } else if (!BIO_write (pKeyBio, CtrRandom.Key, AlgorithmInfo.KeySize)) {
+    DEBUG_PRINT (DEBUG_ERROR, "BIO_write() failed\n");
+  } else {
+    Status = EFI_SUCCESS;
+    goto Done;
+  }
+
+  OfflineDumpEncryptorDelete (pEncryptor);
+  pEncryptor = NULL;
+  Status     = EFI_DEVICE_ERROR;
+
+Done:
+
+  ASSERT (EFI_ERROR (Status) == (pEncryptor == NULL));
+  ZeroMem (&CtrRandom, sizeof (CtrRandom));
+
+  *ppEncryptor = pEncryptor;
+  return Status;
+}
 
 void
 OfflineDumpEncryptorDelete (
@@ -71,78 +191,6 @@ OfflineDumpEncryptorDelete (
     ZeroMem (pEncryptor, OFFSET_OF (OFFLINE_DUMP_ENCRYPTOR, KeyStreamBuffer));
     FreePool (pEncryptor);
   }
-}
-
-EFI_STATUS
-OfflineDumpEncryptorNewAes128Ctr (
-  IN UINT8 const              Key[16],
-  IN UINT64                   IV,
-  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
-  )
-{
-  ASSERT (Key != NULL);
-  ASSERT (ppEncryptor != NULL);
-
-  *ppEncryptor = NULL;
-
-  OFFLINE_DUMP_ENCRYPTOR  *pNewEncryptor = AllocatePool (sizeof (*pNewEncryptor));
-
-  if (pNewEncryptor == NULL) {
-    DEBUG_PRINT (DEBUG_ERROR, "AllocatePool(OFFLINE_DUMP_ENCRYPTOR) failed\n");
-    return EFI_OUT_OF_RESOURCES;
-  }
-
-  pNewEncryptor->pCipherCtx = EVP_CIPHER_CTX_new ();
-  if (pNewEncryptor->pCipherCtx == NULL) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_new() failed\n");
-    FreePool (pNewEncryptor);
-    return EFI_OUT_OF_RESOURCES;
-  }
-
-  if (!EVP_EncryptInit (pNewEncryptor->pCipherCtx, EVP_aes_128_ecb (), Key, NULL)) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_EncryptInit() failed\n");
-    OfflineDumpEncryptorDelete (pNewEncryptor);
-    return EFI_DEVICE_ERROR;
-  } else if (!EVP_CIPHER_CTX_set_padding (pNewEncryptor->pCipherCtx, 0)) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_set_padding() failed\n");
-    OfflineDumpEncryptorDelete (pNewEncryptor);
-    return EFI_DEVICE_ERROR;
-  }
-
-  CopyMem (pNewEncryptor->Aes128Key, Key, sizeof (pNewEncryptor->Aes128Key));
-  pNewEncryptor->InitializationVector = IV;
-
-  *ppEncryptor = pNewEncryptor;
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-OfflineDumpEncryptorNewAes128CtrRandom (
-  OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
-  )
-{
-  ASSERT (ppEncryptor != NULL);
-
-  struct {
-    UINT64    InitializationVector;
-    UINT8     Aes128Key[16];
-  } RandomData;
-
-  if (!RandomBytes ((UINT8 *)&RandomData, sizeof (RandomData))) {
-    DEBUG_PRINT (DEBUG_ERROR, "RandomBytes()  failed\n");
-    *ppEncryptor = NULL;
-    return EFI_NOT_READY;
-  }
-
-  EFI_STATUS  Status;
-
-  Status = OfflineDumpEncryptorNewAes128Ctr (
-                                             RandomData.Aes128Key,
-                                             RandomData.InitializationVector,
-                                             ppEncryptor
-                                             );
-  ZeroMem (&RandomData, sizeof (RandomData));
-  return Status;
 }
 
 static BOOLEAN
@@ -182,63 +230,13 @@ OfflineDumpEncryptorEncrypt (
   ASSERT (pEncryptor != NULL);
   ASSERT (pInputData != NULL || DataSize == 0);
   ASSERT (pOutputData != NULL || DataSize == 0);
+  ASSERT (0 == (StartingByteOffset & AES_BLOCK_MASK));
+  ASSERT (0 == (DataSize & AES_BLOCK_MASK));
 
-  UINT8 const  *pInputBytes  = pInputData;
-  UINT8        *pOutputBytes = pOutputData;
-
-  UINT64     StartingBlockIndex;
-  AES_BLOCK  *pInputBlocks;
-  AES_BLOCK  *pOutputBlocks;
-  UINT32     DataBlockCount;
-
-  if ((0 == (StartingByteOffset & AES_BLOCK_MASK)) &&
-      (0 == (DataSize & AES_BLOCK_MASK)))
-  {
-    // Simple case: Data is aligned to AesBlock boundaries.
-    StartingBlockIndex = StartingByteOffset / AES_BLOCK_SIZE;
-    pInputBlocks       = (AES_BLOCK *)pInputBytes;
-    pOutputBlocks      = (AES_BLOCK *)pOutputBytes;
-    DataBlockCount     = DataSize / AES_BLOCK_SIZE;
-  } else {
-    // TBD: Do we ever need unaligned data?
-
-    // Complex case: Partial block at start and/or end.
-    UINT32 const  PrefixOffset    = (UINT32)StartingByteOffset & AES_BLOCK_MASK;
-    UINT32 const  PrefixMax       = (AES_BLOCK_SIZE - PrefixOffset) & AES_BLOCK_MASK;
-    UINT32 const  PrefixSize      = MIN (DataSize, PrefixMax);
-    UINT32 const  DataAfterPrefix = DataSize - PrefixSize;
-    UINT32 const  SuffixSize      = DataAfterPrefix & AES_BLOCK_MASK;
-
-    StartingBlockIndex = StartingByteOffset / AES_BLOCK_SIZE + (PrefixSize != 0);
-    pInputBlocks       = (AES_BLOCK *)(pInputBytes + PrefixSize);
-    pOutputBlocks      = (AES_BLOCK *)(pOutputBytes + PrefixSize);
-    DataBlockCount     = DataAfterPrefix / AES_BLOCK_SIZE;
-
-    // Prefix CTR
-    pEncryptor->KeyStreamBuffer[0].Lo = StartingBlockIndex - 1;
-    pEncryptor->KeyStreamBuffer[0].Hi = pEncryptor->InitializationVector;
-
-    // Suffix CTR
-    pEncryptor->KeyStreamBuffer[1].Lo = StartingBlockIndex + DataBlockCount;
-    pEncryptor->KeyStreamBuffer[1].Hi = pEncryptor->InitializationVector;
-
-    if (!OD_EncryptKeyStreamBuffer (pEncryptor, 2)) {
-      return EFI_DEVICE_ERROR;
-    }
-
-    // Handle the prefix (if any).
-    for (UINT32 i = 0; i != PrefixSize; i += 1) {
-      pOutputBytes[i] = pInputBytes[i] ^
-                        ((UINT8 const *)&pEncryptor->KeyStreamBuffer[0])[PrefixOffset + i];
-    }
-
-    // Handle the suffix (if any).
-    for (UINT32 i = 0; i != SuffixSize; i += 1) {
-      UINT32 const  BufferPos = DataSize - SuffixSize + i;
-      pOutputBytes[BufferPos] = pInputBytes[BufferPos] ^
-                                ((UINT8 const *)&pEncryptor->KeyStreamBuffer[1])[i];
-    }
-  }
+  UINT64 const       StartingBlockIndex = StartingByteOffset / AES_BLOCK_SIZE;
+  AES_BLOCK * const  pInputBlocks       = (AES_BLOCK *)pInputData;
+  AES_BLOCK * const  pOutputBlocks      = (AES_BLOCK *)pOutputData;
+  UINT32 const       DataBlockCount     = DataSize / AES_BLOCK_SIZE;
 
   UINT32  ProcessedBlockCount = 0;
 
@@ -290,7 +288,7 @@ OfflineDumpEncryptorAlgorithm (
   IN OFFLINE_DUMP_ENCRYPTOR const  *pEncryptor OPTIONAL
   )
 {
-  return pEncryptor ? ENC_DUMP_ALGORITHM_AES128_CTR : ENC_DUMP_ALGORITHM_NONE;
+  return pEncryptor ? pEncryptor->Algorithm : ENC_DUMP_ALGORITHM_NONE;
 }
 
 EFI_STATUS
@@ -305,12 +303,13 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   EFI_STATUS  Status;
 
   STACK_OF (X509)* pRecipientStack = NULL;
-  BIO                     *pKeyBio       = NULL;
-  PKCS7                   *pPkcs7        = NULL;
-  OFFLINE_DUMP_ENCRYPTOR  *pNewEncryptor = NULL;
-  ENC_DUMP_KEY_INFO       *pNewKeyInfo   = NULL;
+  BIO                     *pKeyBio     = NULL;
+  PKCS7                   *pPkcs7      = NULL;
+  OFFLINE_DUMP_ENCRYPTOR  *pEncryptor  = NULL;
+  ENC_DUMP_KEY_INFO       *pNewKeyInfo = NULL;
 
-  if (Algorithm != ENC_DUMP_ALGORITHM_AES128_CTR) {
+  ALGORITHM_INFO  const  AlgorithmInfo = OD_GetAlgorithmInfo (Algorithm);
+  if (AlgorithmInfo.pCipher == NULL) {
     DEBUG_PRINT (DEBUG_ERROR, "Unsupported Algorithm %u\n", Algorithm);
     Status = EFI_UNSUPPORTED;
     goto Error;
@@ -342,18 +341,18 @@ OfflineDumpEncryptorNewKeyInfoBlock (
     goto Error;
   }
 
-  Status = OfflineDumpEncryptorNewAes128CtrRandom (&pNewEncryptor);
+  // Randomly generate a key and an initialization vector.
+  // Write the key to pKeyBio.
+  // Create an Encryptor with the key and IV.
+  Status = OD_EncryptorNew (AlgorithmInfo, pKeyBio, &pEncryptor);
   if (EFI_ERROR (Status)) {
     goto Error;
   }
 
-  if (!BIO_write (pKeyBio, pNewEncryptor->Aes128Key, sizeof (pNewEncryptor->Aes128Key))) {
-    DEBUG_PRINT (DEBUG_ERROR, "BIO_write() failed\n");
-    Status = EFI_OUT_OF_RESOURCES;
-    goto Error;
-  }
-
-  pPkcs7 = PKCS7_encrypt (pRecipientStack, pKeyBio, EVP_aes_128_cbc (), PKCS7_BINARY);
+  // pKeyBio now contains the dump key. Wrap it in a CMS (PKCS7) envelope.
+  // We may be wrapping a 128, 192, or 256-bit key. Key wrapping algorithm must be at
+  // least as strong as the key being wrapped, so wrap using AES-256-CBC.
+  pPkcs7 = PKCS7_encrypt (pRecipientStack, pKeyBio, EVP_aes_256_cbc (), PKCS7_BINARY);
   if (!pPkcs7) {
     DEBUG_PRINT (DEBUG_ERROR, "PKCS7_encrypt() failed\n");
     Status = EFI_DEVICE_ERROR;
@@ -361,7 +360,6 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   }
 
   int  Pkcs7Size = i2d_PKCS7 (pPkcs7, NULL);
-
   if (Pkcs7Size <= 0) {
     DEBUG_PRINT (DEBUG_ERROR, "i2d_PKCS7() failed\n");
     Status = EFI_DEVICE_ERROR;
@@ -369,7 +367,6 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   }
 
   UINT32  KeyInfoSize = sizeof (ENC_DUMP_KEY_INFO) + sizeof (UINT64) + Pkcs7Size;
-
   KeyInfoSize = (KeyInfoSize + 7u) & ~7u; // Pad to 8-byte boundary.
   pNewKeyInfo = AllocateZeroPool (KeyInfoSize);
   if (!pNewKeyInfo) {
@@ -384,8 +381,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   pNewKeyInfo->EncryptedKeyCmsSize      = (UINT32)Pkcs7Size;
 
   UINT8  *pKeyInfoData = (UINT8 *)(pNewKeyInfo + 1);
-
-  CopyMem (pKeyInfoData, &pNewEncryptor->InitializationVector, sizeof (UINT64));
+  CopyMem (pKeyInfoData, &pEncryptor->InitializationVector, sizeof (UINT64));
   pKeyInfoData += sizeof (UINT64);
   Pkcs7Size     = i2d_PKCS7 (pPkcs7, &pKeyInfoData);
   if (pNewKeyInfo->EncryptedKeyCmsSize != (UINT32)Pkcs7Size) {
@@ -399,9 +395,9 @@ OfflineDumpEncryptorNewKeyInfoBlock (
 
 Error:
 
-  if (pNewEncryptor) {
-    OfflineDumpEncryptorDelete (pNewEncryptor);
-    pNewEncryptor = NULL;
+  if (pEncryptor) {
+    OfflineDumpEncryptorDelete (pEncryptor);
+    pEncryptor = NULL;
   }
 
   if (pNewKeyInfo) {
@@ -415,7 +411,7 @@ Done:
   BIO_free (pKeyBio);
   sk_X509_pop_free (pRecipientStack, X509_free);
 
-  *ppEncryptor = pNewEncryptor;
+  *ppEncryptor = pEncryptor;
   *ppKeyInfo   = pNewKeyInfo;
   return Status;
 }

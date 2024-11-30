@@ -6,8 +6,8 @@ Consumes:
   UefiBootServicesTableLib  (gST->RuntimeServices->GetVariable)
 */
 
-#ifndef _included_Library_OfflineDumpVariables_h
-#define _included_Library_OfflineDumpVariables_h
+#ifndef _included_OfflineDumpVariables_h
+#define _included_OfflineDumpVariables_h
 
 #include <Uefi/UefiBaseType.h>
 #include <Guid/OfflineDumpConfig.h>
@@ -40,4 +40,4 @@ GetVariableOfflineMemoryDumpEncryptionPublicKey (
   OUT UINT32  *pRecipientCertificateSize
   );
 
-#endif // _included_Library_OfflineDumpVariables_h
+#endif // _included_OfflineDumpVariables_h

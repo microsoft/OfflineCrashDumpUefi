@@ -17,17 +17,23 @@ typedef enum {
   ENC_DUMP_ALGORITHM_NONE = 0,
 
   // AES128_CTR mode encryption.
-  // - EncryptedKeyCms content must decrypt to the 16-byte value of the AES128 dump key.
+  // - EncryptedKeyCms content must decrypt to the 16-byte DumpKey (AES128 key).
   // - InitializationVectorSize is an 8-byte random value.
   // - ENC_DUMP_CTR_COUNTER (little-endian) is the structure for the counter.
   //
   // Both encryption and decryption are performed using 16-byte blocks as follows:
-  // OutputBlock[N] = InputBlock[N] XOR Aes128EncryptBlock<DumpKey>(ENC_DUMP_CTR_COUNTER{N, IV})
+  // OutputBlock[N] = InputBlock[N] XOR AesEncryptBlock<DumpKey>(ENC_DUMP_CTR_COUNTER{N, IV})
   //
   // If input is not a multiple of 16 bytes, the last block is padded to a multiple of 16 bytes,
   // the encryption/decryption is performed, and then the output is truncated to the original
   // size.
   ENC_DUMP_ALGORITHM_AES128_CTR = 1,
+
+  // AES192_CTR mode encryption: Same as AES128_CTR, but with 24-byte DumpKey (AES192 key).
+  ENC_DUMP_ALGORITHM_AES192_CTR = 2,
+
+  // AES256_CTR mode encryption: Same as AES128_CTR, but with 32-byte DumpKey (AES256 key).
+  ENC_DUMP_ALGORITHM_AES256_CTR = 3,
 } ENC_DUMP_ALGORITHM;
 
 STATIC_ASSERT (
@@ -56,8 +62,8 @@ STATIC_ASSERT (
 // ENC_DUMP_KEY_INFO block = ENC_DUMP_KEY_INFO + InitializationVector + EncryptedKeyCms + padding.
 typedef struct {
   UINT32                BlockSize;                // sizeof(ENC_DUMP_KEY_INFO + InitializationVector + EncryptedKeyCms + padding).
-  ENC_DUMP_ALGORITHM    Algorithm;                // Encryption algorithm used, e.g. ENC_DUMP_ALGORITHM_AES128_CTR.
-  UINT32                InitializationVectorSize; // Size of InitializationVector in bytes, e.g. 8 for AES128_CTR.
+  ENC_DUMP_ALGORITHM    Algorithm;                // Encryption algorithm used, e.g. ENC_DUMP_ALGORITHM_AES???_CTR.
+  UINT32                InitializationVectorSize; // Size of InitializationVector in bytes, e.g. 8 for AES???_CTR.
   UINT32                EncryptedKeyCmsSize;      // Size of EncryptedKeyCms in bytes.
   // Followed by InitializationVectorSize bytes of InitializationVector data.
   // Followed by EncryptedKeyCmsSize bytes of EncryptedKeyCms data.
@@ -69,7 +75,7 @@ STATIC_ASSERT (
                "ENC_DUMP_KEY_INFO should be 16 bytes"
                );
 
-// Counter value for AES128_CTR mode encryption.
+// Counter value for AES???_CTR mode encryption.
 // CounterLow is set to 0 for the first 16-byte block, 1 for the next block, etc.
 // CounterHigh is set to the 8-byte InitializationVector.
 typedef struct {

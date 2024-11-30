@@ -17,8 +17,8 @@
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
 static const UINT8   BufferCountDefault       = 3;
-static const UINT32  BufferMemoryLimitDefault = 0x300000; // 3 MB
-static const UINT32  SectionCountMax          = (0x80000000 - sizeof (RAW_DUMP_HEADER)) / sizeof (RAW_DUMP_SECTION_HEADER);
+static const UINT32  BufferMemoryLimitDefault = SIZE_1MB * 3; // 3 MB
+static const UINT32  SectionCountMax          = (SIZE_2GB - sizeof (RAW_DUMP_HEADER)) / sizeof (RAW_DUMP_SECTION_HEADER);
 static const UINT32  SectionAlign             = 16;
 
 typedef struct ODW_BUFFER_INFO ODW_BUFFER_INFO;
@@ -311,45 +311,21 @@ ODW_CurrentBufferInfoFlush (
   IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
   )
 {
+  ASSERT (pDumpWriter->pCurrentBufferInfo);
+  ASSERT (pDumpWriter->CurrentBufferInfoUsed != 0);
+  ASSERT (pDumpWriter->CurrentBufferInfoUsed <= pDumpWriter->BufferSize);
+  ASSERT (0 == (pDumpWriter->CurrentBufferInfoUsed & ((1u << pDumpWriter->MediaBlockShift) - 1)));
+  ASSERT (0 == (pDumpWriter->FlushedMediaPosition & ((1u << pDumpWriter->MediaBlockShift) - 1)));
+
   if (pDumpWriter->MediaSize > pDumpWriter->FlushedMediaPosition) {
-    UINT64 const  MediaRemaining = pDumpWriter->MediaSize - pDumpWriter->FlushedMediaPosition;
+    ODW_BUFFER_INFO *const  pCurrentBufferInfo = pDumpWriter->pCurrentBufferInfo;
+    UINT64 const            MediaRemaining     = pDumpWriter->MediaSize - pDumpWriter->FlushedMediaPosition;
+    UINT32 const            BytesToWrite       = (UINT32)MIN (MediaRemaining, pDumpWriter->CurrentBufferInfoUsed);
 
-    ODW_BUFFER_INFO *const  pCurrentBufferInfo    = pDumpWriter->pCurrentBufferInfo;
-    UINT32 const            CurrentBufferInfoUsed = pDumpWriter->CurrentBufferInfoUsed;
-    UINT32 const            BytesToWrite          = (UINT32)MIN (MediaRemaining, CurrentBufferInfoUsed);
-    UINT8 const             MediaBlockShift       = pDumpWriter->MediaBlockShift;
-    UINT8                   *pBuffer              = pCurrentBufferInfo->pBuffer;
-
-    ASSERT (pCurrentBufferInfo);
-    ASSERT (CurrentBufferInfoUsed != 0);
-    ASSERT (CurrentBufferInfoUsed <= pDumpWriter->BufferSize);
-    ASSERT (0 == (CurrentBufferInfoUsed & ((1u << MediaBlockShift) - 1)));
     ASSERT (BytesToWrite != 0);
-    ASSERT (0 == (BytesToWrite & ((1u << MediaBlockShift) - 1)));
-    ASSERT (0 == (pDumpWriter->FlushedMediaPosition & ((1u << MediaBlockShift) - 1)));
+    ASSERT (0 == (BytesToWrite & ((1u << pDumpWriter->MediaBlockShift) - 1)));
 
     EFI_STATUS  Status;
-
-    if (pDumpWriter->pEncryptor) {
-      DEBUG_PRINT (
-                   DEBUG_VERBOSE,
-                   "Encrypting %u bytes using offset %llu (data)\n",
-                   BytesToWrite,
-                   (long long unsigned)(pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset)
-                   );
-      Status = OfflineDumpEncryptorEncrypt (
-                                            pDumpWriter->pEncryptor,
-                                            pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset,
-                                            BytesToWrite,
-                                            pBuffer,
-                                            pBuffer
-                                            );
-      if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (data) failed (%r)\n", Status);
-        pDumpWriter->LastWriteError = Status;
-        ZeroMem (pBuffer, BytesToWrite);
-      }
-    }
 
     if (pDumpWriter->pBlockIo2) {
       // Send pCurrentBufferInfo into the void.
@@ -362,10 +338,10 @@ ODW_CurrentBufferInfoFlush (
       Status = pBlockIo2->WriteBlocksEx (
                                          pBlockIo2,
                                          pDumpWriter->MediaID,
-                                         pDumpWriter->FlushedMediaPosition >> MediaBlockShift,
+                                         pDumpWriter->FlushedMediaPosition >> pDumpWriter->MediaBlockShift,
                                          &pCurrentBufferInfo->Token,
                                          BytesToWrite,
-                                         pBuffer
+                                         pCurrentBufferInfo->pBuffer
                                          );
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "WriteBlocksEx failed (%r)\n", Status);
@@ -381,9 +357,9 @@ ODW_CurrentBufferInfoFlush (
       Status = pBlockIo->WriteBlocks (
                                       pBlockIo,
                                       pDumpWriter->MediaID,
-                                      pDumpWriter->FlushedMediaPosition >> MediaBlockShift,
+                                      pDumpWriter->FlushedMediaPosition >> pDumpWriter->MediaBlockShift,
                                       BytesToWrite,
-                                      pBuffer
+                                      pCurrentBufferInfo->pBuffer
                                       );
       if (EFI_ERROR (Status)) {
         DEBUG_PRINT (DEBUG_ERROR, "WriteBlocks failed (%r)\n", Status);
@@ -394,6 +370,89 @@ ODW_CurrentBufferInfoFlush (
 
   pDumpWriter->FlushedMediaPosition += pDumpWriter->CurrentBufferInfoUsed;
   pDumpWriter->CurrentBufferInfoUsed = 0;
+}
+
+// pDumpWriter->CurrentBufferInfoUsed += DataSize.
+// If this makes pCurrentBufferInfo full, flush it.
+static void
+ODW_IncrementCurrentBufferInfoUsed (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter,
+  IN UINT32                   DataSize
+  )
+{
+  ASSERT (pDumpWriter->BufferSize > pDumpWriter->CurrentBufferInfoUsed);
+  ASSERT (pDumpWriter->BufferSize - pDumpWriter->CurrentBufferInfoUsed >= DataSize);
+
+  UINT32 const  NewSize = pDumpWriter->CurrentBufferInfoUsed + DataSize;
+  pDumpWriter->CurrentBufferInfoUsed = NewSize;
+
+  if (NewSize >= pDumpWriter->BufferSize) {
+    ASSERT (NewSize == pDumpWriter->BufferSize);
+    ODW_CurrentBufferInfoFlush (pDumpWriter);
+  }
+}
+
+// If there is no current buffer, sets pCurrentBufferInfo = ODW_GetFreeBuffer().
+// (Waits for a free buffer if necessary.)
+//
+// Returns pCurrentBufferInfo->pBuffer.
+static UINT8 *
+ODW_EnsureCurrentBufferInfo (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter
+  )
+{
+  ODW_BUFFER_INFO  *pCurrentBufferInfo = pDumpWriter->pCurrentBufferInfo;
+
+  if (pCurrentBufferInfo) {
+    ASSERT (pDumpWriter->CurrentBufferInfoUsed < pDumpWriter->BufferSize);
+  } else {
+    ASSERT (pDumpWriter->CurrentBufferInfoUsed == 0);
+    pCurrentBufferInfo              = ODW_GetFreeBuffer (pDumpWriter);
+    pDumpWriter->pCurrentBufferInfo = pCurrentBufferInfo;
+  }
+
+  return pCurrentBufferInfo->pBuffer;
+}
+
+// EncryptSize must be a multiple of SectionAlign and must fit into pCurrentBufferInfo.
+// Encrypts the specified data into pCurrentBufferInfo.
+// Does NOT increment CurrentBufferInfoUsed.
+// On error, zeroes the corresponding part of pCurrentBufferInfo and sets LastWriteError.
+static void
+ODW_EncryptIntoCurrentBufferInfo (
+  IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter,
+  IN void const               *pInputData,
+  IN UINT32                   EncryptSize
+  )
+{
+  UINT32 const  CurrentBufferInfoUsed = pDumpWriter->CurrentBufferInfoUsed;
+
+  ASSERT (pDumpWriter->pEncryptor != NULL);
+  ASSERT (EncryptSize % SectionAlign == 0);
+  ASSERT (CurrentBufferInfoUsed + EncryptSize >= EncryptSize);
+  ASSERT (CurrentBufferInfoUsed + EncryptSize <= pDumpWriter->BufferSize);
+
+  void * const  pOutputData = pDumpWriter->pCurrentBufferInfo->pBuffer + CurrentBufferInfoUsed;
+  UINT64 const  Counter     = pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset + CurrentBufferInfoUsed;
+  DEBUG_PRINT (
+               DEBUG_VERBOSE,
+               "Encrypt data CTR=0x%llX LEN=0x%X\n",
+               (long long unsigned)(Counter),
+               EncryptSize
+               );
+  ASSERT (EncryptSize % SectionAlign == 0);
+  EFI_STATUS const  Status = OfflineDumpEncryptorEncrypt (
+                                                          pDumpWriter->pEncryptor,
+                                                          Counter,
+                                                          EncryptSize,
+                                                          pInputData,
+                                                          pOutputData
+                                                          );
+  if (EFI_ERROR (Status)) {
+    DEBUG_PRINT (DEBUG_ERROR, "Encrypt data failed (%r)\n", Status);
+    pDumpWriter->LastWriteError = Status;
+    ZeroMem (pOutputData, EncryptSize);
+  }
 }
 
 static void
@@ -438,13 +497,18 @@ OfflineDumpWriterClose (
 {
   if (pDumpWriter->CurrentBufferInfoUsed != 0) {
     ASSERT (pDumpWriter->pCurrentBufferInfo);
-    UINT32  TailSize = ALIGN_VALUE_ADDEND (pDumpWriter->CurrentBufferInfoUsed, 1u << pDumpWriter->MediaBlockShift);
-    ZeroMem (
-             pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed,
-             TailSize
-             );
+    UINT8 *const  pTail    = pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed;
+    UINT32 const  TailSize = ALIGN_VALUE_ADDEND (pDumpWriter->CurrentBufferInfoUsed, 1u << pDumpWriter->MediaBlockShift);
+    ZeroMem (pTail, TailSize);
+    if (pDumpWriter->pEncryptor) {
+      // Encrypt in-place.
+      ASSERT (TailSize % SectionAlign == 0);
+      ODW_EncryptIntoCurrentBufferInfo (pDumpWriter, pTail, TailSize);
+    }
+
     pDumpWriter->CurrentBufferInfoUsed += TailSize;
     ODW_CurrentBufferInfoFlush (pDumpWriter);
+    ASSERT (pDumpWriter->CurrentBufferInfoUsed == 0);
   }
 
   // Flush the headers once without the RAW_DUMP_HEADER_DUMP_VALID bit to ensure headers
@@ -949,21 +1013,24 @@ OfflineDumpWriterFlushHeaders (
         Pos < pDumpWriter->RawDumpOffset
         ? pDumpWriter->RawDumpOffset - Pos
         : 0;
+      UINT32 const  EncryptSize = ThisBlockSize - EncryptStart;
+      UINT64 const  Counter     = Pos + EncryptStart - pDumpWriter->RawDumpOffset;
       DEBUG_PRINT (
                    DEBUG_VERBOSE,
-                   "Encrypting %u bytes using offset %u (headers)\n",
-                   ThisBlockSize - EncryptStart,
-                   (UINT32)(Pos + EncryptStart - pDumpWriter->RawDumpOffset)
+                   "Encrypt headers CTR=0x%llX LEN=0x%X\n",
+                   (long long unsigned)(Counter),
+                   EncryptSize
                    );
+      ASSERT (EncryptSize % SectionAlign == 0);
       Status = OfflineDumpEncryptorEncrypt (
                                             pDumpWriter->pEncryptor,
-                                            Pos + EncryptStart - pDumpWriter->RawDumpOffset,
-                                            ThisBlockSize - EncryptStart,
+                                            Counter,
+                                            EncryptSize,
                                             pDest + EncryptStart,
                                             pDest + EncryptStart
                                             );
       if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "EncryptorEncrypt (headers) failed (%r)\n", Status);
+        DEBUG_PRINT (DEBUG_ERROR, "Encrypt headers failed (%r)\n", Status);
         break;
       }
     }
@@ -1047,48 +1114,74 @@ OfflineDumpWriterWriteSection (
   BOOLEAN  SectionValid = 0 != (SectionHeaderFlags & RAW_DUMP_SECTION_HEADER_DUMP_VALID);
   UINTN    Pos          = 0;
 
-  while (DataSize > Pos) {
-    ASSERT (Pos % 16 == 0);
+  UINTN const  DataSizeWithoutTail = DataSize & ~(UINTN)(SectionAlign - 1);
+  while (DataSizeWithoutTail > Pos) {
+    ASSERT (Pos % SectionAlign == 0);
 
-    if (pDumpWriter->pCurrentBufferInfo) {
-      ASSERT (pDumpWriter->CurrentBufferInfoUsed < pDumpWriter->BufferSize);
-    } else {
-      ASSERT (pDumpWriter->CurrentBufferInfoUsed == 0);
-      pDumpWriter->pCurrentBufferInfo = ODW_GetFreeBuffer (pDumpWriter);
-    }
-
-    UINTN const   Remaining = DataSize - Pos;
+    UINTN const   Remaining = DataSizeWithoutTail - Pos;
     UINT32 const  Capacity  = pDumpWriter->BufferSize - pDumpWriter->CurrentBufferInfoUsed;
     UINT32 const  ToCopy    = (UINT32)MIN (Capacity, Remaining);
 
-    UINT8 *const  DestinationPos = pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed;
+    UINT8 *const  pCurrentBuffer = ODW_EnsureCurrentBufferInfo (pDumpWriter);
     if (!pDataCallback) {
-      // TODO: Optimize this -- we can probably avoid the CopyMem and do the copy as part of the
-      // encryption operation.
-      CopyMem (
-               DestinationPos,
-               (UINT8 const *)pDataStart + Pos,
-               ToCopy
-               );
+      if (!pDumpWriter->pEncryptor) {
+        CopyMem (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, (UINT8 const *)pDataStart + Pos, ToCopy);
+      } else {
+        // Optimization: copy and encrypt in one operation.
+        // Encrypts into pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed.
+        ASSERT (ToCopy % SectionAlign == 0);
+        ODW_EncryptIntoCurrentBufferInfo (pDumpWriter, (UINT8 const *)pDataStart + Pos, ToCopy);
+      }
     } else {
       EFI_STATUS  Status;
-      Status = pDataCallback (DestinationPos, pDataStart, Pos, ToCopy);
+      Status = pDataCallback (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, pDataStart, Pos, ToCopy);
       if (EFI_ERROR (Status)) {
         SectionValid                = FALSE;
         pDumpWriter->LastWriteError = Status;
-        break;
+        goto CopyDone;
+      }
+
+      if (pDumpWriter->pEncryptor) {
+        // Encrypt in-place.
+        ASSERT (ToCopy % SectionAlign == 0);
+        ODW_EncryptIntoCurrentBufferInfo (pDumpWriter, pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, ToCopy);
       }
     }
 
-    pDumpWriter->CurrentBufferInfoUsed += ToCopy;
-
-    if (pDumpWriter->CurrentBufferInfoUsed >= pDumpWriter->BufferSize) {
-      ASSERT (pDumpWriter->CurrentBufferInfoUsed == pDumpWriter->BufferSize);
-      ODW_CurrentBufferInfoFlush (pDumpWriter);
-    }
-
+    ODW_IncrementCurrentBufferInfoUsed (pDumpWriter, ToCopy);
     Pos += ToCopy;
   }
+
+  ASSERT (DataSizeWithoutTail == Pos);
+
+  UINTN const  TailSize = DataSize & (SectionAlign - 1);
+  ASSERT (DataSize == DataSizeWithoutTail + TailSize);
+  if (TailSize != 0) {
+    UINT8 *const  pCurrentBuffer = ODW_EnsureCurrentBufferInfo (pDumpWriter);
+    if (!pDataCallback) {
+      CopyMem (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, (UINT8 const *)pDataStart + Pos, TailSize);
+    } else {
+      EFI_STATUS  Status;
+      Status = pDataCallback (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, pDataStart, Pos, TailSize);
+      if (EFI_ERROR (Status)) {
+        SectionValid                = FALSE;
+        pDumpWriter->LastWriteError = Status;
+        goto CopyDone;
+      }
+    }
+
+    ZeroMem (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed + TailSize, SectionAlign - TailSize);
+
+    if (pDumpWriter->pEncryptor) {
+      // Encrypt in-place. (Size must be a multiple of SectionAlign.)
+      ODW_EncryptIntoCurrentBufferInfo (pDumpWriter, pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, SectionAlign);
+    }
+
+    ODW_IncrementCurrentBufferInfoUsed (pDumpWriter, SectionAlign);
+    Pos += TailSize;
+  }
+
+CopyDone:
 
   ASSERT (Pos == DataSize || !SectionValid);
   pSectionHeader->Size = Pos;
@@ -1099,25 +1192,14 @@ OfflineDumpWriterWriteSection (
     pSectionHeader->Flags |= RAW_DUMP_SECTION_HEADER_DUMP_VALID;
   }
 
-  ASSERT (pSectionHeader->Size == OfflineDumpWriterMediaPosition (pDumpWriter) - pDumpWriter->RawDumpOffset - pSectionHeader->Offset);
+  UINT64 const  MediaPosition = OfflineDumpWriterMediaPosition (pDumpWriter);
+  ASSERT (MediaPosition % SectionAlign == 0);
+  ASSERT (
+          MediaPosition ==
+          pDumpWriter->RawDumpOffset + pSectionHeader->Offset + ALIGN_VALUE (pSectionHeader->Size, SectionAlign)
+          );
 
-  // Start next section on a 16-byte boundary.
-  UINT32 const  PaddingSize = ALIGN_VALUE_ADDEND (pDumpWriter->CurrentBufferInfoUsed, SectionAlign);
-
-  if (PaddingSize != 0) {
-    ZeroMem (
-             pDumpWriter->pCurrentBufferInfo->pBuffer + pDumpWriter->CurrentBufferInfoUsed,
-             PaddingSize
-             );
-    pDumpWriter->CurrentBufferInfoUsed += PaddingSize;
-
-    if (pDumpWriter->CurrentBufferInfoUsed >= pDumpWriter->BufferSize) {
-      ASSERT (pDumpWriter->CurrentBufferInfoUsed == pDumpWriter->BufferSize);
-      ODW_CurrentBufferInfoFlush (pDumpWriter);
-    }
-  }
-
-  pDumpHeader->TotalDumpSizeRequired = OfflineDumpWriterMediaPosition (pDumpWriter);
+  pDumpHeader->TotalDumpSizeRequired = MediaPosition;
   pDumpHeader->DumpSize              =
     MIN (pDumpHeader->TotalDumpSizeRequired, pDumpWriter->MediaSize) - pDumpWriter->RawDumpOffset;
   pDumpHeader->SectionsCount = SectionsCount + 1;

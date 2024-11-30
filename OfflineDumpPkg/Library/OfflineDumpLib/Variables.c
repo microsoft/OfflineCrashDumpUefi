@@ -4,7 +4,7 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
-static UINT32 const  mOfflineDumpEncryptionPublicKeyMaxSize = 0x10000;
+static UINT32 const  mOfflineDumpEncryptionPublicKeyMaxSize = SIZE_64KB;
 
 EFI_STATUS
 GetVariableOfflineMemoryDumpUseCapability (

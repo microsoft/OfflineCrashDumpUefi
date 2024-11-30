@@ -8,8 +8,8 @@ Consumes:
   UefiBootServicesTableLib
 */
 
-#ifndef _included_Library_OfflineDumpPartition_h
-#define _included_Library_OfflineDumpPartition_h
+#ifndef _included_OfflineDumpPartition_h
+#define _included_OfflineDumpPartition_h
 
 #include <Uefi/UefiBaseType.h>
 
@@ -50,4 +50,4 @@ FindOfflineDumpRawBlockDeviceHandleForTesting (
   OUT EFI_HANDLE  *pRawBlockDeviceHandle
   );
 
-#endif // _included_Library_OfflineDumpPartition_h
+#endif // _included_OfflineDumpPartition_h

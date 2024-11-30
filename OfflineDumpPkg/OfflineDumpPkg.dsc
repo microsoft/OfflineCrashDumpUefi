@@ -79,7 +79,10 @@
 [PcdsFixedAtBuild]
 
   # INIT, WARN, LOAD, FS, INFO, ERROR
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel  |0x8000004F
+  gEfiMdePkgTokenSpaceGuid.PcdFixedDebugPrintErrorLevel |0x8000004F
+
+  # INIT, WARN, LOAD, FS, INFO, ERROR
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel      |0x8000004F
 
   # ASSERT, PRINT, CODE, MEMORY
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask     |0x0F
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask         |0x0F
