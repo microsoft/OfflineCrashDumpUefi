@@ -12,6 +12,9 @@
 #define PcdGetBool(x)  TRUE
 #endif
 
+// For use in printf format values.
+typedef long long unsigned llu_t;
+
 static CHAR8 const   SectionData[]      = "Hello, World!ABC:123456789abcdef";
 static UINT8 const   SectionDataSizes[] = {
   0, 1, 15, 16, 17, 23, 24, 25, 31, 32
@@ -102,8 +105,8 @@ UefiMain (
   if (InsufficientStorage) {
     Print (
            L"Insufficient storage (Have 0x%llX Need 0x%llX)\n",
-           (unsigned long long)MediaSize,
-           (unsigned long long)MediaPos
+           (llu_t)MediaSize,
+           (llu_t)MediaPos
            );
   }
 

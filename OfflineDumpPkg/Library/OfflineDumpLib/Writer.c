@@ -16,6 +16,9 @@
 
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
+// For use in printf format values.
+typedef long long unsigned llu_t;
+
 static const UINT8   BufferCountDefault       = 3;
 static const UINT32  BufferMemoryLimitDefault = SIZE_1MB * 3; // 3 MB
 static const UINT32  SectionCountMax          = (SIZE_2GB - sizeof (RAW_DUMP_HEADER)) / sizeof (RAW_DUMP_SECTION_HEADER);
@@ -384,6 +387,7 @@ ODW_IncrementCurrentBufferInfoUsed (
   ASSERT (pDumpWriter->BufferSize - pDumpWriter->CurrentBufferInfoUsed >= DataSize);
 
   UINT32 const  NewSize = pDumpWriter->CurrentBufferInfoUsed + DataSize;
+
   pDumpWriter->CurrentBufferInfoUsed = NewSize;
 
   if (NewSize >= pDumpWriter->BufferSize) {
@@ -432,12 +436,13 @@ ODW_EncryptIntoCurrentBufferInfo (
   ASSERT (CurrentBufferInfoUsed + EncryptSize >= EncryptSize);
   ASSERT (CurrentBufferInfoUsed + EncryptSize <= pDumpWriter->BufferSize);
 
-  void * const  pOutputData = pDumpWriter->pCurrentBufferInfo->pBuffer + CurrentBufferInfoUsed;
+  void *const   pOutputData = pDumpWriter->pCurrentBufferInfo->pBuffer + CurrentBufferInfoUsed;
   UINT64 const  Counter     = pDumpWriter->FlushedMediaPosition - pDumpWriter->RawDumpOffset + CurrentBufferInfoUsed;
+
   DEBUG_PRINT (
                DEBUG_VERBOSE,
                "Encrypt data CTR=0x%llX LEN=0x%X\n",
-               (long long unsigned)(Counter),
+               (llu_t)(Counter),
                EncryptSize
                );
   ASSERT (EncryptSize % SectionAlign == 0);
@@ -448,6 +453,7 @@ ODW_EncryptIntoCurrentBufferInfo (
                                                           pInputData,
                                                           pOutputData
                                                           );
+
   if (EFI_ERROR (Status)) {
     DEBUG_PRINT (DEBUG_ERROR, "Encrypt data failed (%r)\n", Status);
     pDumpWriter->LastWriteError = Status;
@@ -528,8 +534,8 @@ OfflineDumpWriterClose (
                DEBUG_INFO,
                "Close: LastError=%u MediaSize=%llu NeededSize=%llu\n",
                pDumpWriter->LastWriteError,
-               OfflineDumpWriterMediaSize (pDumpWriter),
-               OfflineDumpWriterMediaPosition (pDumpWriter)
+               (llu_t)OfflineDumpWriterMediaSize (pDumpWriter),
+               (llu_t)OfflineDumpWriterMediaPosition (pDumpWriter)
                );
 
   RAW_DUMP_HEADER  *pDumpHeader = ODW_DumpHeader (pDumpWriter);
@@ -747,7 +753,12 @@ OfflineDumpWriterOpen (
     }
 
     if (pDumpWriter->MediaSize < HeadersSize) {
-      DEBUG_PRINT (DEBUG_ERROR, "HeaderSize %u doesn't fit in MediaSize %llu\n", HeadersSize, pDumpWriter->MediaSize);
+      DEBUG_PRINT (
+                   DEBUG_ERROR,
+                   "HeaderSize %u doesn't fit in MediaSize %llu\n",
+                   HeadersSize,
+                   (llu_t)pDumpWriter->MediaSize
+                   );
       Status = EFI_VOLUME_FULL;
       goto Done;
     }
@@ -1018,7 +1029,7 @@ OfflineDumpWriterFlushHeaders (
       DEBUG_PRINT (
                    DEBUG_VERBOSE,
                    "Encrypt headers CTR=0x%llX LEN=0x%X\n",
-                   (long long unsigned)(Counter),
+                   (llu_t)(Counter),
                    EncryptSize
                    );
       ASSERT (EncryptSize % SectionAlign == 0);
@@ -1115,6 +1126,7 @@ OfflineDumpWriterWriteSection (
   UINTN    Pos          = 0;
 
   UINTN const  DataSizeWithoutTail = DataSize & ~(UINTN)(SectionAlign - 1);
+
   while (DataSizeWithoutTail > Pos) {
     ASSERT (Pos % SectionAlign == 0);
 
@@ -1155,6 +1167,7 @@ OfflineDumpWriterWriteSection (
   ASSERT (DataSizeWithoutTail == Pos);
 
   UINTN const  TailSize = DataSize & (SectionAlign - 1);
+
   ASSERT (DataSize == DataSizeWithoutTail + TailSize);
   if (TailSize != 0) {
     UINT8 *const  pCurrentBuffer = ODW_EnsureCurrentBufferInfo (pDumpWriter);
@@ -1193,6 +1206,7 @@ CopyDone:
   }
 
   UINT64 const  MediaPosition = OfflineDumpWriterMediaPosition (pDumpWriter);
+
   ASSERT (MediaPosition % SectionAlign == 0);
   ASSERT (
           MediaPosition ==

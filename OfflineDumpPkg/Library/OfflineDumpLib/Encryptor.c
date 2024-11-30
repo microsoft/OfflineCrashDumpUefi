@@ -46,9 +46,9 @@ To be able to use BaseCryptLib.h instead of <openssl/???.h>, we would need:
 */
 
 enum {
+  KEY_STREAM_BUFFER_SIZE        = 8 * SIZE_1KB,
+  KEY_STREAM_BUFFER_BLOCK_COUNT = KEY_STREAM_BUFFER_SIZE / sizeof (AES_BLOCK),
   AES_BLOCK_MASK                = AES_BLOCK_SIZE - 1,
-  KEY_STREAM_BUFFER_SIZE        = 4 * SIZE_1KB,
-  KEY_STREAM_BUFFER_BLOCK_COUNT = KEY_STREAM_BUFFER_SIZE / sizeof (AES_BLOCK)
 };
 
 STATIC_ASSERT (
@@ -144,7 +144,8 @@ OD_EncryptorNew (
     goto Done;
   }
 
-  EVP_CIPHER_CTX * const  pCipherCtx = EVP_CIPHER_CTX_new ();
+  EVP_CIPHER_CTX *const  pCipherCtx = EVP_CIPHER_CTX_new ();
+
   if (pCipherCtx == NULL) {
     DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_new() failed\n");
     FreePool (pEncryptor);
@@ -233,10 +234,10 @@ OfflineDumpEncryptorEncrypt (
   ASSERT (0 == (StartingByteOffset & AES_BLOCK_MASK));
   ASSERT (0 == (DataSize & AES_BLOCK_MASK));
 
-  UINT64 const       StartingBlockIndex = StartingByteOffset / AES_BLOCK_SIZE;
-  AES_BLOCK * const  pInputBlocks       = (AES_BLOCK *)pInputData;
-  AES_BLOCK * const  pOutputBlocks      = (AES_BLOCK *)pOutputData;
-  UINT32 const       DataBlockCount     = DataSize / AES_BLOCK_SIZE;
+  UINT64 const      StartingBlockIndex = StartingByteOffset / AES_BLOCK_SIZE;
+  AES_BLOCK *const  pInputBlocks       = (AES_BLOCK *)pInputData;
+  AES_BLOCK *const  pOutputBlocks      = (AES_BLOCK *)pOutputData;
+  UINT32 const      DataBlockCount     = DataSize / AES_BLOCK_SIZE;
 
   UINT32  ProcessedBlockCount = 0;
 
@@ -253,10 +254,11 @@ OfflineDumpEncryptorEncrypt (
     }
 
     for (unsigned i = 0; i != KEY_STREAM_BUFFER_BLOCK_COUNT; i += 1) {
-      pOutputBlocks[ProcessedBlockCount].Lo = pInputBlocks[ProcessedBlockCount].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
-      pOutputBlocks[ProcessedBlockCount].Hi = pInputBlocks[ProcessedBlockCount].Hi ^ pEncryptor->KeyStreamBuffer[i].Hi;
-      ProcessedBlockCount                  += 1;
+      pOutputBlocks[ProcessedBlockCount + i].Lo = pInputBlocks[ProcessedBlockCount + i].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
+      pOutputBlocks[ProcessedBlockCount + i].Hi = pInputBlocks[ProcessedBlockCount + i].Hi ^ pEncryptor->KeyStreamBuffer[i].Hi;
     }
+
+    ProcessedBlockCount += KEY_STREAM_BUFFER_BLOCK_COUNT;
   }
 
   UINT32  remainingBlocks = DataBlockCount - ProcessedBlockCount;
@@ -274,10 +276,11 @@ OfflineDumpEncryptorEncrypt (
     }
 
     for (unsigned i = 0; i != remainingBlocks; i += 1) {
-      pOutputBlocks[ProcessedBlockCount].Lo = pInputBlocks[ProcessedBlockCount].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
-      pOutputBlocks[ProcessedBlockCount].Hi = pInputBlocks[ProcessedBlockCount].Hi ^ pEncryptor->KeyStreamBuffer[i].Hi;
-      ProcessedBlockCount                  += 1;
+      pOutputBlocks[ProcessedBlockCount + i].Lo = pInputBlocks[ProcessedBlockCount + i].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
+      pOutputBlocks[ProcessedBlockCount + i].Hi = pInputBlocks[ProcessedBlockCount + i].Hi ^ pEncryptor->KeyStreamBuffer[i].Hi;
     }
+
+    ProcessedBlockCount += remainingBlocks;
   }
 
   return EFI_SUCCESS;
@@ -309,6 +312,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   ENC_DUMP_KEY_INFO       *pNewKeyInfo = NULL;
 
   ALGORITHM_INFO  const  AlgorithmInfo = OD_GetAlgorithmInfo (Algorithm);
+
   if (AlgorithmInfo.pCipher == NULL) {
     DEBUG_PRINT (DEBUG_ERROR, "Unsupported Algorithm %u\n", Algorithm);
     Status = EFI_UNSUPPORTED;
@@ -360,6 +364,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   }
 
   int  Pkcs7Size = i2d_PKCS7 (pPkcs7, NULL);
+
   if (Pkcs7Size <= 0) {
     DEBUG_PRINT (DEBUG_ERROR, "i2d_PKCS7() failed\n");
     Status = EFI_DEVICE_ERROR;
@@ -367,6 +372,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   }
 
   UINT32  KeyInfoSize = sizeof (ENC_DUMP_KEY_INFO) + sizeof (UINT64) + Pkcs7Size;
+
   KeyInfoSize = (KeyInfoSize + 7u) & ~7u; // Pad to 8-byte boundary.
   pNewKeyInfo = AllocateZeroPool (KeyInfoSize);
   if (!pNewKeyInfo) {
@@ -381,6 +387,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
   pNewKeyInfo->EncryptedKeyCmsSize      = (UINT32)Pkcs7Size;
 
   UINT8  *pKeyInfoData = (UINT8 *)(pNewKeyInfo + 1);
+
   CopyMem (pKeyInfoData, &pEncryptor->InitializationVector, sizeof (UINT64));
   pKeyInfoData += sizeof (UINT64);
   Pkcs7Size     = i2d_PKCS7 (pPkcs7, &pKeyInfoData);

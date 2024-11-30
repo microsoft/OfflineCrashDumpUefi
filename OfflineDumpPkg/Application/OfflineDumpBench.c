@@ -16,6 +16,9 @@
 #define PcdGetBool(x)  TRUE
 #endif
 
+// For use in printf format values.
+typedef long long unsigned llu_t;
+
 static void
 GetLargestConventionalRegion (
   OUT UINT8 const  **ppPhysicalBase,
@@ -196,9 +199,9 @@ PrintPerformanceCounterProperties (
 
   Print (
          L"Timestamp info: Freq=%llu Start=0x%llX End=0x%llX\n",
-         (unsigned long long)Frequency,
-         (unsigned long long)StartValue,
-         (unsigned long long)EndValue
+         (llu_t)Frequency,
+         (llu_t)StartValue,
+         (llu_t)EndValue
          );
 }
 
@@ -214,7 +217,7 @@ PrintCpuInfo (
   if (!EFI_ERROR (Status)) {
     EFI_SMBIOS_HANDLE  SmbiosHandle = SMBIOS_HANDLE_PI_RESERVED;
     SMBIOS_TYPE        Type4        = 4;
-    for ( ;;) {
+    for ( ; ;) {
       EFI_SMBIOS_TABLE_HEADER  *pHeader;
       Status = pSmbiosProtocol->GetNext (pSmbiosProtocol, &SmbiosHandle, &Type4, &pHeader, NULL);
       if (EFI_ERROR (Status) || (SmbiosHandle == SMBIOS_HANDLE_PI_RESERVED)) {
@@ -371,8 +374,8 @@ UefiMain (
   if (InsufficientStorage) {
     Print (
            L"Insufficient storage (Have 0x%llX Need 0x%llX)\n",
-           (unsigned long long)MediaSize,
-           (unsigned long long)MediaPos
+           (llu_t)MediaSize,
+           (llu_t)MediaPos
            );
   }
 
@@ -397,7 +400,7 @@ UefiMain (
   Print (
          L"Results: Data = %u MB, Time = %llu ms, Rate = %u MB/sec\n",
          (unsigned)(DumpSize / (1024 * 1024)),
-         (unsigned long long)(TimeNS / 1000000),
+         (llu_t)(TimeNS / 1000000),
          (unsigned)(KilobytesPerSecond / 1024)
          );
   Status = EFI_SUCCESS;
