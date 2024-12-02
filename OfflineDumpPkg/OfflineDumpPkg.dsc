@@ -31,7 +31,7 @@
 
   BaseLib                     |MdePkg/Library/BaseLib/BaseLib.inf
   BaseMemoryLib               |MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
-  DebugLib                    |MdePkg/Library/UefiDebugLibConOut/UefiDebugLibConOut.inf
+  DebugLib                    |MdePkg/Library/UefiDebugLibStdErr/UefiDebugLibStdErr.inf
   DebugPrintErrorLevelLib     |MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
   DevicePathLib               |MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
   MemoryAllocationLib         |MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
@@ -78,11 +78,17 @@
 
 [PcdsFixedAtBuild]
 
-  # INIT, WARN, LOAD, FS, INFO, ERROR
+  # DEBUG_PRINT() filter mask (consumed by DebugLib).
+  # - The DebugLib implementation of DebugPrintLevelEnabled(Level) returns 0 != (PcdFixedDebugPrintErrorLevel & Level).
+  # - The DEBUG_PRINT() macro in DebugLib.h uses DebugPrintLevelEnabled(Level) to filter output before evaluating
+  #   the expression or calling the DebugPrint() function.
+  # 0x8000004F = INIT, WARN, LOAD, FS, INFO, ERROR
   gEfiMdePkgTokenSpaceGuid.PcdFixedDebugPrintErrorLevel |0x8000004F
 
-  # INIT, WARN, LOAD, FS, INFO, ERROR
+  # DebugPrint() filter mask (consumed by DebugPrintErrorLevelLib).
+  # 0x8000004F = INIT, WARN, LOAD, FS, INFO, ERROR
   gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel      |0x8000004F
 
-  # ASSERT, PRINT, CODE, MEMORY
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask         |0x0F
+  # ASSERT(), DEBUG, DEBUG_CODE(), DEBUG_CLEAR_MEMORY() filter mask (consumed by DebugLib).
+  # 0x11 = ASSERT_BREAKPOINT_ENABLED + ASSERT
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask         |0x11

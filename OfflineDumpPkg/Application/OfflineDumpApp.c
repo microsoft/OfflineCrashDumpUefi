@@ -18,7 +18,7 @@ typedef long long unsigned llu_t;
 
 static CHAR8 const   HelloSectionData[]      = "Hello, World!ABC:123456789abcdef";
 static UINT8 const   HelloSectionDataSizes[] = {
-  0, 1, 15, 16, 17, 23, 24, 25, 31, 32
+  0, 1, 15, 16, 17, 23, 24, 25, 31, 32 // Various sizes to exercise boundary conditions.
 };
 static UINT32 const  HelloSectionCount = ARRAY_SIZE (HelloSectionDataSizes);
 
