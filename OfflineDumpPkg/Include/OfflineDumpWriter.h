@@ -3,11 +3,14 @@ Microsoft Offline Dump - Functions for writing dump data to a block device.
 
 PRELIMINARY DESIGN:
 
-Current goal is just to get to the point of "valid benchmarks".
+The DUMP_WRITER object implements writing section data to a block device, handling
+block I/O and full-dump encryption. It does not handle memory/CPU redaction, memory
+region encryption, or other aspects of the dump process.
 
 This is not the intended final interface. Current interface is intended to simplify
-development and testing. Intended final interface is a single function,
-OfflineDumpWrite(pConfigurationProtocol).
+development and testing. Intended final interface will handle higher-level operations
+like memory redaction and encryption. The final interface will likely be a single
+WriteDump function that accepts a pDumpConfigurationProtocol pointer.
 
 Consumes:
 
@@ -35,11 +38,24 @@ typedef struct OFFLINE_DUMP_WRITER OFFLINE_DUMP_WRITER;
 typedef struct OFFLINE_DUMP_WRITER_OPTIONS {
   // If false, use BLOCK_IO_PROTOCOL only if BLOCK_IO2_PROTOCOL is not supported.
   // If true, always use BLOCK_IO_PROTOCOL.
+  //
+  // Set this to true if the underlying device supports BLOCK_IO2_PROTOCOL but doesn't
+  // support efficient async I/O. This will cause the writer to use BLOCK_IO_PROTOCOL and
+  // synchronous I/O instead of BLOCK_IO2_PROTOCOL with async I/O. On devices that support
+  // BLOCK_IO2_PROTOCOL but don't fully support async I/O, this can improve performance.
+  // For example, the current EDK2 implementation of the AHCI driver supports BLOCK_IO2
+  // but always completes the I/O synchonously, so it would be more efficient to use
+  // BLOCK_IO for AHCI devices.
+  //
+  // May also be useful for testing or debugging.
   BOOLEAN    DisableBlockIo2;
 
   // If false, use OfflineMemoryDumpEncryptionAlgorithm variable to determine encryption.
   // If true, ignore OfflineMemoryDumpEncryptionAlgorithm and always write an unencrypted
   // dump.
+  //
+  // This is useful for testing or debugging. This flag must not be set for production
+  // builds.
   BOOLEAN    ForceUnencrypted;
 
   // Number of buffers to use for async I/O. Significant only if the device supports
@@ -47,8 +63,9 @@ typedef struct OFFLINE_DUMP_WRITER_OPTIONS {
   //
   // - If this is 0, a default value will be selected.
   // - If this is 1, it will be set to 2.
-  // - If async I/O is not supported by the device, this will be ignored. The writer will
-  //   use one large buffer for writing data and a smaller buffer for writing headers.
+  // - If EFI_BLOCK_IO2_PROTOCOL is not supported by the device or if the DisableBlockIo2
+  //   flag is set, this value will be ignored. In this case, the writer always use one
+  //   large buffer for writing data and one small buffer for writing headers.
   UINT8    BufferCount;
 
   // Maximum total bytes to allocate for the dump writer's I/O buffers (soft limit).
@@ -288,7 +305,8 @@ typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
 //
 // pDataStart: start of the section data. If pDataCallback is NULL, this is a pointer to
 //      the section data. If pDataCallback is non-NULL, this is an opaque value that will
-//      be passed to the callback.
+//      be passed to the callback (when using a callback, the pDataStart parameter is
+//      just a context value and does not need to be a real pointer).
 //
 // DataSize: size of the section data in bytes.
 //

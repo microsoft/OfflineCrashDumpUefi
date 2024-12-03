@@ -7,11 +7,11 @@
   In particular, use [DUMP_WRITER](OfflineDumpPkg/Include/Library/OfflineDumpWriter.h) to write dumps.
 
 - **[Application](OfflineDumpPkg/Application/OfflineDumpApp/)** -- sample shows how to generate an offline crash
-  dump using the provided [DUMP_WRITER](OfflineDumpPkg/Include/Library/OfflineDumpWriter.h) library.
+  dump using the DUMP_WRITER library.
 
-## Getting started on Windows
+## EDK2 build environment (Windows)
 
-### Windows first-time setup
+### EDK2 first-time setup (Windows)
 
 - As necessary, install Visual Studio compiler tools.
 - As necessary, install Python 3. `python.exe` should be on your PATH.
@@ -29,15 +29,15 @@
     - If you usually want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
     - If you usually want to build a standaline OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
 
-### Windows each-time setup
+### EDK2 each-time setup (Windows)
 
 - Run `wsetup` to set up the environment.
 - Run `build` to build the active platform.
 - Run `build (options)` to build other platforms.
 
-## Getting started on Linux
+## EDK2 build environment (Linux)
 
-### Linux first-time setup
+### EDK2 first-time setup (Linux)
 
 - As necessary, install basic build stuff: `apt install build-essential uuid-dev iasl nasm git python3 python-is-python3`
 - As necessary, install cross-compiler: `apt install gcc-aarch64-linux-gnu`
@@ -54,9 +54,9 @@
     - If you want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
     - If you want to build a standaline OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
 
-### Linux each-time setup
+### EDK2 each-time setup (Linux)
 
-- Run `usetup` to set up the environment.
+- Source `. usetup.sh` to set up the environment (use `. usetup.sh`, not `./usetup.sh`).
 - Run `build` to build the active platform.
 - Run `build (options)` to build other platforms.
 
@@ -119,19 +119,27 @@ You can then run the resulting WinHost.exe to launch the emulator, and then in t
 
 ## Future Directions
 
-In the future, it is expected that the application will become usable as-is rather than a sample. The
-implementor will install an OfflineDumpConfiguration protocol and the application will use it to
-configure the resulting offline crash dump. The protocol will provide the following information for
-use by the application:
+At present, the `DUMP_WRITER` class is the top layer of the provided library. To create a dump,
+you construct a `DUMP_WRITER`, write sections, and close the dump writer.
+
+In the future, the `DUMP_WRITER` will become a private implementation detail. The top layer of the
+library will be a single `WriteDump` function that takes a `pDumpConfigurationProtocol` parameter.
+The `pDumpConfigurationProtocol` will point to a structure with all of the information needed to
+write the dump:
 
 - Required: CPU context data to be included in the dump.
 - Required: Dump reason data to be included in the dump.
 - Required: System information data to be included in the dump.
 - Required: List of DDR_RANGE sections to be included in the dump.
+- Required: Progress callback (to blink a progress LED or update the screen).
 - Optional: Redaction list for Secure Kernel memory.
 - Optional: List of other sections to be included in the dump (e.g. SV_SPECIFIC).
-- Optional: Override logic for locating the block device to which the dump should be written.
+- Optional: Custom rules for locating the block device to which the dump should be written.
 - Optional: Other customizations, e.g. memory management tuning parameters.
+
+In the future, this functionality will be provided as a binary EFI application rather than as source
+code. The implementor will install an OfflineDumpConfiguration protocol and the application will use
+it to configure the resulting offline crash dump.
 
 ## Contributing
 

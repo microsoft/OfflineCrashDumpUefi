@@ -240,7 +240,7 @@ ShowUsage (
   )
 {
   Print (L"Usage:   bench <DumpSize> [ <BufferMem> <BufferCount> <NoEncrypt> <NoAsync> ]\n");
-  Print (L"Example: bench 0x1000000   0x100000     8             0           0\n");
+  Print (L"Example: bench 0x1000000    0x100000    8             0           0\n");
   // Undocumented 5th parameter: UsePartition
   return EFI_INVALID_PARAMETER;
 }
