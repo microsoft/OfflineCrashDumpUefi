@@ -796,8 +796,8 @@ OfflineDumpWriterOpen (
     RAW_DUMP_HEADER  *pDumpHeader = (RAW_DUMP_HEADER *)pHeadersPos;
     *pDumpHeader = (RAW_DUMP_HEADER) {
       .Signature             = RAW_DUMP_HEADER_SIGNATURE,
-      .MajorVersion          = 1,
-      .MinorVersion          = 0,
+      .MajorVersion          = RAW_DUMP_HEADER_CURRENT_MAJOR_VERSION,
+      .MinorVersion          = RAW_DUMP_HEADER_CURRENT_MINOR_VERSION,
       .Flags                 = DumpHeaderFlags,
       .OsData                = 0,
       .CpuContext            = 0,

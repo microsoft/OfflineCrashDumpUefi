@@ -65,10 +65,11 @@
 OfflineDump is configured using some firmware variables. For testing purposes, you will need to set
 these variables before running the sample app.
 
-- Use the [decvars.nsh](OfflineDumpPkg/decvars.nsh) script to configure the device for unencrypted dumps.
-- Use the [encvars.nsh](OfflineDumpPkg/encvars.nsh) script to configure the device for encrypted dumps.
-  - This installs the certificate from `sample_keys.cer`.
-  - The private key corresponding to this certificate is provided in `sample_keys.pfx` (password `abc123`).
+- Use the [dumpvars.nsh](OfflineDumpPkg/dumpvars.nsh) script to configure the device.
+  - This sets OfflineMemoryDumpUseCapability = 1 (enable dumps).
+  - This sets OfflineMemoryDumpEncryptionAlgorithm to 0 (no encryption), 1 (AES128), 2 (AES192), or 3 (AES256).
+  - This sets OfflineMemoryDumpEncryptionPublicKey to the certificate from `sample_keys.cer`.
+  - The private key corresponding to `sample_keys.cer` is provided in `sample_keys.pfx` (password `abc123`).
 
 The `OfflineDumpApp.efi` sample app will do the following:
 
@@ -110,7 +111,7 @@ You may want to copy the firmware setup variables to that directory, i.e. from r
 You can then run the resulting WinHost.exe to launch the emulator, and then in the shell, run the app:
 
 - In the UEFI shell, change to the FS0 drive: `FS0:`
-- If needed, set up the UEFI variables by running either `.\decvars.nsh` or `.\encvars.nsh`.
+- If needed, set up the UEFI variables by running `.\dumpvars.nsh`.
 - Run the sample application: `.\OfflineDumpApp.efi`
 - Note that some of the output goes to the debug console, not the shell console.
 - Close the emulator.

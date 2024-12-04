@@ -240,8 +240,8 @@ UefiMain (
                                             // Flags - should include DUMP_VALID flag if section is valid.
                                             // Must not include the INSUFFICIENT_STORAGE flag -- it's handled automatically.
                                             RAW_DUMP_SECTION_HEADER_DUMP_VALID,
-                                            1, // MajorVersion - defined by vendor.
-                                            0, // MinorVersion - defined by vendor.
+                                            RAW_DUMP_SV_SPECIFIC_CURRENT_MAJOR_VERSION,
+                                            RAW_DUMP_SV_SPECIFIC_CURRENT_MINOR_VERSION,
                                             RAW_DUMP_SECTION_SV_SPECIFIC,
                                             &Information,
                                             HelloSectionName,    // Section naming convention is defined by the vendor.

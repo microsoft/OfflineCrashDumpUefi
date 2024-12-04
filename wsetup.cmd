@@ -63,5 +63,7 @@ if not exist "%IASL_PREFIX%iasl.exe" (
     echo copy to .\edk2\BaseTools\Bin\Win32.
 )
 
+title EDK2-OffCD %CD%
+
 :exit
 popd
