@@ -1076,7 +1076,7 @@ OfflineDumpWriterWriteSection (
   IN RAW_DUMP_SECTION_TYPE               Type,
   IN RAW_DUMP_SECTION_INFORMATION const  *pInformation,
   IN CHAR8 const                         *pName,
-  IN DUMP_WRITER_COPY_CALLBACK           *pDataCallback OPTIONAL,
+  IN DUMP_WRITER_COPY_CALLBACK           DataCallback OPTIONAL,
   IN void const                          *pDataStart,
   IN UINTN                               DataSize
   )
@@ -1092,7 +1092,7 @@ OfflineDumpWriterWriteSection (
   if ((0 != (SectionHeaderFlags & RawDumpSectionHeaderInvalidFlags)) ||
       !pInformation ||
       !pName ||
-      ((DataSize != 0) && !pDataStart && !pDataCallback))
+      ((DataSize != 0) && !pDataStart && !DataCallback))
   {
     return EFI_INVALID_PARAMETER;
   } else if (SectionsCount >= pDumpWriter->SectionCountExpected) {
@@ -1135,7 +1135,7 @@ OfflineDumpWriterWriteSection (
     UINT32 const  ToCopy    = (UINT32)MIN (Capacity, Remaining);
 
     UINT8 *const  pCurrentBuffer = ODW_EnsureCurrentBufferInfo (pDumpWriter);
-    if (!pDataCallback) {
+    if (DataCallback == NULL) {
       if (!pDumpWriter->pEncryptor) {
         CopyMem (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, (UINT8 const *)pDataStart + Pos, ToCopy);
       } else {
@@ -1145,11 +1145,8 @@ OfflineDumpWriterWriteSection (
         ODW_EncryptIntoCurrentBufferInfo (pDumpWriter, (UINT8 const *)pDataStart + Pos, ToCopy);
       }
     } else {
-      EFI_STATUS  Status;
-      Status = pDataCallback (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, pDataStart, Pos, ToCopy);
-      if (EFI_ERROR (Status)) {
-        SectionValid                = FALSE;
-        pDumpWriter->LastWriteError = Status;
+      if (!DataCallback (pDataStart, Pos, ToCopy, pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed)) {
+        SectionValid = FALSE;
         goto CopyDone;
       }
 
@@ -1171,14 +1168,11 @@ OfflineDumpWriterWriteSection (
   ASSERT (DataSize == DataSizeWithoutTail + TailSize);
   if (TailSize != 0) {
     UINT8 *const  pCurrentBuffer = ODW_EnsureCurrentBufferInfo (pDumpWriter);
-    if (!pDataCallback) {
+    if (!DataCallback) {
       CopyMem (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, (UINT8 const *)pDataStart + Pos, TailSize);
     } else {
-      EFI_STATUS  Status;
-      Status = pDataCallback (pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed, pDataStart, Pos, TailSize);
-      if (EFI_ERROR (Status)) {
-        SectionValid                = FALSE;
-        pDumpWriter->LastWriteError = Status;
+      if (!DataCallback (pDataStart, Pos, TailSize, pCurrentBuffer + pDumpWriter->CurrentBufferInfoUsed)) {
+        SectionValid = FALSE;
         goto CopyDone;
       }
     }

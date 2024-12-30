@@ -233,9 +233,6 @@ OfflineDumpWriterFlushHeaders (
 
 // Callback to use for reading the section data, e.g. to access fenced memory regions.
 //
-// pDestinationPos: destination buffer for the data. Buffer has room for Size bytes.
-//     Important: Copy to pDestinationPos[0..Size]. Do not add Offset to this pointer.
-//
 // pDataStart: The value of the pDataStart parameter that was passed to
 //     OfflineDumpWriterWriteSection.
 //
@@ -249,33 +246,36 @@ OfflineDumpWriterFlushHeaders (
 //     to this callback will have a Size that is not a multiple of 16 (to read the last
 //     bytes).
 //
-// Returns: EFI_SUCCESS on success, or error code if copy failed. An error will cause
-//     copying to stop, section to be marked as invalid, dump to be marked as invalid.
+// pDestinationPos: destination buffer for the data. Buffer has room for Size bytes.
+//     Important: Copy to pDestinationPos[0..Size]. Do not add Offset to this pointer.
+//
+// Returns: TRUE on success, FALSE if copy failed. FALSE will cause the section to be
+//          trucated to the last successfully-copied offset and the section to be
+//          marked as invalid (the dump will not be marked as invalid).
 //
 // Section data will be copied by code that looks approximately like this:
 //
-// for (UINTN Offset = 0; Offset < DataSize; Offset += sizeof(DestinationBuffer)) {
-//   UINTN Size = MIN(DataSize - Offset, sizeof(DestinationBuffer));
-//   if (!pDataCallback) {
+// UINT8 DestinationBuffer[SomeMultipleOf16];
+// for (UINT64 Offset = 0; Offset < DataSize; Offset += sizeof(DestinationBuffer)) {
+//   UINTN Size = (UINTN)MIN(DataSize - Offset, sizeof(DestinationBuffer));
+//   if (DataCallback == NULL) {
 //      CopyMem(DestinationBuffer, pDataStart + Offset, Size);
-//   } else {
-//      Status = pDataCallback(DestinationBuffer, pDataStart, Offset, Size);
-//      if (EFI_ERROR(Status)) {
-//        Section->Flags &= ~RAW_DUMP_SECTION_HEADER_DUMP_VALID; // Mark section as invalid.
-//        Section->Size = Offset; // Set section size to the last successfully-copied offset.
-//        pDumpWriter->LastWriteError = Status; // Dump will be marked invalid.
-//        break; // Stop copying section data.
-//      }
+//   } else if (!DataCallback(pDataStart, Offset, Size, DestinationBuffer)) {
+//      Section->Flags &= ~RAW_DUMP_SECTION_HEADER_DUMP_VALID; // Mark section as invalid.
+//      Section->Size = Offset; // Truncate section size to the last successfully-copied offset.
+//      break; // Stop copying data for this section (continue to other sections).
 //   }
 //   AppendToDump(DestinationBuffer, Size);
 // }
 //
-typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
-                                                      OUT UINT8      *pDestinationPos,
-                                                      IN void const  *pDataStart,
-                                                      IN UINTN       Offset,
-                                                      IN UINTN       Size
-                                                      );
+typedef
+  BOOLEAN
+(EFIAPI *DUMP_WRITER_COPY_CALLBACK)(
+                                    IN void const  *pDataStart,
+                                    IN UINTN       Offset,
+                                    IN UINTN       Size,
+                                    OUT UINT8      *pDestinationPos
+                                    );
 
 // Fills in the header and writes the data for the next section.
 // May block on a write operation (writing section data).
@@ -298,13 +298,13 @@ typedef EFI_STATUS (EFIAPI DUMP_WRITER_COPY_CALLBACK)(
 // pName: name of the section. Must be a null-terminated string. If the name is longer
 //      than 20 characters, it will be truncated.
 //
-// pDataCallback: Callback to use for reading the section data. If NULL, the section data
+// DataCallback: Callback to use for reading the section data. If NULL, the section data
 //      will be copied directly. If non-NULL, the callback will be invoked as:
 //
-//      Status = pDataCallback(pDestinationPos, pDataStart, Offset, Size);
+//      Ok = DataCallback(pDataStart, Offset, Size, pDestinationPos);
 //
-// pDataStart: start of the section data. If pDataCallback is NULL, this is a pointer to
-//      the section data. If pDataCallback is non-NULL, this is an opaque value that will
+// pDataStart: start of the section data. If DataCallback is NULL, this is a pointer to
+//      the section data. If DataCallback is non-NULL, this is an opaque value that will
 //      be passed to the callback (when using a callback, the pDataStart parameter is
 //      just a context value and does not need to be a real pointer).
 //
@@ -341,7 +341,7 @@ OfflineDumpWriterWriteSection (
   IN RAW_DUMP_SECTION_TYPE               Type,
   IN RAW_DUMP_SECTION_INFORMATION const  *pInformation,
   IN CHAR8 const                         *pName,
-  IN DUMP_WRITER_COPY_CALLBACK           *pDataCallback OPTIONAL,
+  IN DUMP_WRITER_COPY_CALLBACK           DataCallback OPTIONAL,
   IN void const                          *pDataStart,
   IN UINTN                               DataSize
   );

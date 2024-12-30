@@ -60,12 +60,12 @@ static GUID const  HelloSectionGuid =
 
 // The data for any section can be provided via a callback.
 // If the callback is specified as NULL, the data will be copied directly (e.g. via CopyMem).
-static EFI_STATUS EFIAPI
+static BOOLEAN EFIAPI
 CopyCpuContextCallback (
-  OUT UINT8      *pDestinationPos,
   IN void const  *pDataStart,
   IN UINTN       Offset,
-  IN UINTN       Size
+  IN UINTN       Size,
+  OUT UINT8      *pDestinationPos
   )
 {
   // Callback should perform any custom logic needed to access the section's data,
@@ -74,7 +74,7 @@ CopyCpuContextCallback (
   // In real code, you should not use a callback if you are just performing a normal CopyMem.
   // If you pass NULL as the callback, the writer will perform the copy directly.
   CopyMem (pDestinationPos, (UINT8 *)pDataStart + Offset, Size);
-  return EFI_SUCCESS;
+  return TRUE;
 }
 
 // Copies up to MaxSize bytes from Source to Destination.
@@ -103,7 +103,7 @@ MemoryDescriptorToSectionName (
 {
   switch (Desc->Type) {
     case EfiConventionalMemory:
-      return "ConventionalMemory";
+      return "DDR";
     default:
       return NULL;
   }

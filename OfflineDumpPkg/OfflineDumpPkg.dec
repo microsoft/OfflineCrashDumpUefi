@@ -42,3 +42,7 @@
   gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|TRUE|BOOLEAN|0x00001001
 
 [Protocols]
+
+  ## Include/Protocol/OfflineDumpConfiguration.h
+  ## {56B79CF2-9D1F-42fc-B45A-16BBBA5C623A}
+  gOfflineDumpConfigurationProtocolGuid = { 0x56b79cf2, 0x9d1f, 0x42fc, { 0xb4, 0x5a, 0x16, 0xbb, 0xba, 0x5c, 0x62, 0x3a }}

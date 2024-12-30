@@ -4,10 +4,11 @@
   offline crash dumps.
 
 - **[Libraries](OfflineDumpPkg/Include/Library/)** -- support code for writing offline crash dumps.
-  In particular, use [DUMP_WRITER](OfflineDumpPkg/Include/Library/OfflineDumpWriter.h) to write dumps.
+  In particular, use [OFFLINE_DUMP_WRITER](OfflineDumpPkg/Include/Library/OfflineDumpWriter.h) to write
+  dumps.
 
-- **[Application](OfflineDumpPkg/Application/OfflineDumpApp/)** -- sample shows how to generate an offline crash
-  dump using the DUMP_WRITER library.
+- **[Application](OfflineDumpPkg/Application/OfflineDumpApp/)** -- sample shows how to generate an offline
+  crash dump using `OFFLINE_DUMP_WRITER`.
 
 ## EDK2 build environment (Windows)
 
@@ -27,7 +28,7 @@
   - Update `TARGET_ARCH` as appropriate for your default target, e.g. `X64`.
   - As appropriate, set `ACTIVE_PLATFORM` to the platform you want to have as your default.
     - If you usually want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
-    - If you usually want to build a standaline OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
+    - If you usually want to build a standalone OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
 
 ### EDK2 each-time setup (Windows)
 
@@ -51,8 +52,8 @@
   - Update `TOOL_CHAIN_TAG` to `GCC`
   - Update `TARGET_ARCH` as appropriate for your default target, e.g. `X64` or `AARCH64`.
   - As appropriate, set `ACTIVE_PLATFORM` to the platform you want to have as your default.
-    - If you want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
-    - If you want to build a standaline OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
+    - If you usually want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
+    - If you usually want to build a standalone OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
 
 ### EDK2 each-time setup (Linux)
 
@@ -73,9 +74,9 @@ these variables before running the sample app.
 
 The `OfflineDumpApp.efi` sample app will do the following:
 
-- Look for a GPT partition with Type = SVRawDump.
-- If found, look for the necessary UEFI variables that control dump enablement and encryption.
-- If found, write a "sample" dump to the partition.
+- Look for an appropriate target for the dump, e.g. GPT partition with Type = SVRawDump.
+- If a target is found, look for the necessary UEFI variables that control dump enablement and encryption.
+- If the variables are found, write a "sample" dump to the partition.
 
 ## Configuring EmulatorPkg on Windows
 
@@ -84,29 +85,17 @@ If using EmulatorPkg to test the application, you'll probably want to configure 
 Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sample application.
 
 - Under `[LibraryClasses]`, add: `OfflineDumpLib|OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
-- If appropriate, under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition|FALSE`
+- Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
-    That allows you to treat disk.dmg directly as a rawdump.bin file without any kind of extraction step.
+    This allows you to treat `disk.dmg` directly as a `rawdump.bin` file without any kind of extraction step.
 - Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpApp/OfflineDumpApp.inf`
 - Under `[Components]`, add: `OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
 
-Edit `EmulatorPkg\EmuBlockIoDxe\EmuBlockIo.c`. In `EmuBlockIo2WriteBlocksEx`, before `return Status;`, add the
-following to fix hangs due to a bug in the emulator's BlockIo2 implementation:
-
-```C
-if (Token && Token->Event && !EFI_ERROR (Status)) {
-  gBS->SignalEvent (Token->Event);
-}
-```
-
-Edit `EmulatorPkg\Win\Host\WinBlockIo.c`. In `WinNtBlockIoWriteBlocks`, change the type of the `BytesWritten`
-variable from `UINTN` to `DWORD` to fix write failures.
-
-You may then `build -p EmulatorPkg/EmulatorPkg.dsc` to build the EmulatorPkg platform, resulting in
+You may then run `build -p EmulatorPkg/EmulatorPkg.dsc` to build the EmulatorPkg platform, resulting in
 platform files in a directory like `ROOT\workspace\Build\EmulatorX64\DEBUG_VS2022\X64`.
 
 You may want to copy the firmware setup variables to that directory, i.e. from repo root, run:
-`copy OfflineDumpPkg\*.nsh workspace\Build\EmulatorX64\DEBUG_VS2022\X64`
+`copy OfflineDumpPkg\dumpvars.nsh workspace\Build\EmulatorX64\DEBUG_VS2022\X64`
 
 You can then run the resulting WinHost.exe to launch the emulator, and then in the shell, run the app:
 
@@ -118,15 +107,17 @@ You can then run the resulting WinHost.exe to launch the emulator, and then in t
 - The dump will be present in the disk image file, `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg`.
   - If encrypted, you can decrypt using the sample private key from `sample_keys.pfx` (password `abc123`).
 
+Note that there have been several recent bug fixes in EmulatorPkg. The OfflineDump code assumes that
+these bugs have been fixed. You may encounter hangs or errors if using an old version of EmulatorPkg.
+
 ## Future Directions
 
-At present, the `DUMP_WRITER` class is the top layer of the provided library. To create a dump,
-you construct a `DUMP_WRITER`, write sections, and close the dump writer.
+At present, the `OFFLINE_DUMP_WRITER` class is the top layer of the provided library. To create a dump,
+you construct a `OFFLINE_DUMP_WRITER`, write sections, and close the dump writer.
 
-In the future, the `DUMP_WRITER` will become a private implementation detail. The top layer of the
+In the future, the `OFFLINE_DUMP_WRITER` will become a private implementation detail. The top layer of the
 library will be a single `WriteDump` function that takes a `pDumpConfigurationProtocol` parameter.
-The `pDumpConfigurationProtocol` will point to a structure with all of the information needed to
-write the dump:
+`pDumpConfigurationProtocol` will point to a structure with all of the information needed to write the dump:
 
 - Required: CPU context data to be included in the dump.
 - Required: Dump reason data to be included in the dump.
@@ -138,7 +129,7 @@ write the dump:
 - Optional: Custom rules for locating the block device to which the dump should be written.
 - Optional: Other customizations, e.g. memory management tuning parameters.
 
-In the future, this functionality will be provided as a binary EFI application rather than as source
+In the future, this functionality may be distributed as a binary EFI application rather than as source
 code. The implementor will install an OfflineDumpConfiguration protocol and the application will use
 it to configure the resulting offline crash dump.
 
