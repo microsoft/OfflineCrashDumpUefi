@@ -271,10 +271,10 @@ OfflineDumpWriterFlushHeaders (
 typedef
   BOOLEAN
 (EFIAPI *DUMP_WRITER_COPY_CALLBACK)(
-                                    IN void const  *pDataStart,
-                                    IN UINTN       Offset,
-                                    IN UINTN       Size,
-                                    OUT UINT8      *pDestinationPos
+                                    IN VOID const *pDataStart,
+                                    IN UINTN      Offset,
+                                    IN UINTN      Size,
+                                    OUT UINT8     *pDestinationPos
                                     );
 
 // Fills in the header and writes the data for the next section.

@@ -10,6 +10,7 @@
 
 [Sources]
 
+  Collect.c
   Encryptor.c
   Partition.c
   Variables.c

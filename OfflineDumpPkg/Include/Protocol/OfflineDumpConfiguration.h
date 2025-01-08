@@ -19,6 +19,7 @@
     0x56b79cf2, 0x9d1f, 0x42fc, { 0xb4, 0x5a, 0x16, 0xbb, 0xba, 0x5c, 0x62, 0x3a } \
   } \
 
+
 /**
   Protocol implemented by UEFI vendor to provide dump information to the Offline
   Crash Dump writer and to configure writer behavior.
@@ -38,17 +39,16 @@ typedef struct _OFFLINE_DUMP_CONFIGURATION_PROTOCOL OFFLINE_DUMP_CONFIGURATION_P
   Revision of the OFFLINE_DUMP_CONFIGURATION_PROTOCOL interface that a component supports.
 
   The protocol implementation (UEFI vendor) provides its revision in the Revision field
-  of the protocol structure. The writer uses this value to determine which fields of the
-  protocol structure can be accessed. It will never access fields that were added in a
-  later revision and will use a default value instead (typically NULL or 0).
+  of the OFFLINE_DUMP_CONFIGURATION_PROTOCOL protocol structure. The writer uses this value
+  to determine which fields of the protocol structure can be accessed. It will never access
+  fields that were added in a later revision and will use a default value instead (typically
+   NULL or 0).
 
   The writer implementation provides its revision value when calling the Begin
   function. The protocol implementation uses this value to determine which features the
   writer supports. For example, if a new section type is added in a future version of the
-  specification and new implementations of the writer include support for automatically
-  generating the new section, the protocol implementation can use the revision value to
-  determine whether to provide the section information in the pSections array (old writer
-  revision) or to expect the writer to automatically generate the section (new revision).
+  specification, the protocol implementation can use the revision value to determine whether
+  the new section type will be recognized.
 
 **/
 typedef enum {
@@ -65,7 +65,8 @@ STATIC_ASSERT (
   Callback used for reading the section data, e.g. to access fenced memory regions.
   Used in the OFFLINE_DUMP_CONFIGURATION_SECTION_INFO structure's DataCopyCallback field.
 
-  @param[in]  pThis           A pointer to the OFFLINE_DUMP_CONFIGURATION_PROTOCOL instance.
+  TODO: Should this take a pThis parameter that points to the protocol instance?
+
   @param[in]  pDataStart      The value of the opaque pDataStart parameter that was set in
                               OFFLINE_DUMP_CONFIGURATION_SECTION_INFO.
   @param[in]  Offset          Offset into the section. This will always be less than the DataSize
@@ -110,7 +111,6 @@ STATIC_ASSERT (
 typedef
   BOOLEAN
 (EFIAPI *OFFLINE_DUMP_DATA_COPY)(
-                                 IN OFFLINE_DUMP_CONFIGURATION_PROTOCOL *pThis,
                                  IN VOID const *pDataStart,
                                  IN UINTN      Offset,
                                  IN UINTN      Size,
@@ -140,10 +140,8 @@ typedef struct {
   //
   // The protocol implementation uses this value to determine which features the
   // writer supports. For example, if a new section type is added in a future version of the
-  // specification and new implementations of the writer include support for automatically
-  // generating the new section, the protocol implementation can use the revision value to
-  // determine whether to provide the section information in the pSections array (old writer
-  // revision) or to expect the writer to automatically generate the section (new revision).
+  // specification, the protocol implementation can use the revision value to determine whether
+  // the new section type will be recognized.
   //
   OFFLINE_DUMP_CONFIGURATION_PROTOCOL_REVISION    WriterRevision;
 
@@ -161,64 +159,52 @@ typedef struct {
   multiple sections being written to the dump, or it may be ignored entirely. For example:
 
   - A single DDR_RANGE section may result in multiple DDR sections being written to the dump, e.g. if
-    parts of the section need to be redacted.
+    parts of the section contain secure-kernel data and need to be redacted.
   - If the writer does not support a section type or does not support a requested action, it will ignore
     the section and will not write it to the dump.
 **/
 typedef struct {
-  //
-  // Normally NONE. Should not include DUMP_VALID or INSUFFICIENT_STORAGE.
-  //
-  RAW_DUMP_SECTION_HEADER_FLAGS    Flags;
-
-  //
-  // Normally FALSE. If TRUE, indicates that the writer should not set the DUMP_VALID flag
-  // for the section.
-  //
-  BOOLEAN                          ForceInvalid;
-
-  //
-  // Must be set to 0. (Potential future use: SectionAction)
-  //
-  UINT8                            Reserved1;
-
-  //
-  // Must be set to 0. (Potential future use: SectionActionData)
-  //
-  UINT16                           Reserved2;
-
   //
   // Section type, e.g. DDR_RANGE or SV_SPECIFIC.
   //
   RAW_DUMP_SECTION_TYPE            Type;
 
   //
+  // Normally NONE. Should not include DUMP_VALID or INSUFFICIENT_STORAGE.
+  //
+  RAW_DUMP_SECTION_HEADER_FLAGS    Flags;
+
+  //
   // Section name. Ends at first '\0', or at 20 chars. Not guaranteed to be unique.
   // If this is set to "" then the writer will provide a default name for the section.
   // DDR_RANGE section names should start with "DDR".
   //
-  CHAR8                            Name[20];
+  // TODO: guidance for section names.
+  //
+  CHAR8 const                     *pName;
 
   //
-  // Use the appropriate field based on Type, e.g. if Type=DDR_RANGE use Information.DdrRange.
+  // Additional information about the section. The format of this information depends on the
+  // section type. For example, if Type=DDR_RANGE, the Information.DdrRange field of the union
+  // must be filled-in.
   //
-  RAW_DUMP_SECTION_INFORMATION     Information;
+  RAW_DUMP_SECTION_INFORMATION    Information;
 
   //
   // Size of the section data.
   //
-  UINT64                           DataSize;
+  UINT64                          DataSize;
 
   //
   // If DataCopyCallback == NULL, this is a pointer to the section data (must be normal readable memory).
   //
-  // If DataCopyCallback != NULL, this is an opaque context value that will be passed to the callback.
+  // If DataCopyCallback != NULL, this is an opaque context value that will be passed to DataCopyCallback.
   //
-  VOID const                       *pDataStart;
+  VOID const                      *pDataStart;
 
   //
   // If DataCopyCallback == NULL, the writer will treat pDataStart as a pointer to normal readable memory
-  // and will  access it directly. (Preferred - this allows the writer to optimize the data copy.)
+  // and will access it directly. (Preferred - this allows the writer to optimize the data copy.)
   //
   // If DataCopyCallback != NULL, the writer will treat pDataStart as an opaque context value and will call
   // DataCopyCallback as needed to read the section data. This might be used for data that is
@@ -227,10 +213,36 @@ typedef struct {
   OFFLINE_DUMP_DATA_COPY    DataCopyCallback;
 
   //
+  // Normally FALSE. If TRUE, indicates that the writer should not set the DUMP_VALID flag
+  // for the section.
+  //
+  BOOLEAN                   ForceInvalid;
+
+  //
+  // Must be set to 0. (Potential future use: SectionAction)
+  //
+  UINT8                     Reserved1;
+
+  //
+  // Must be set to 0. (Potential future use: SectionActionData)
+  //
+  UINT16                    Reserved2;
+
+  //
+  // Must be set to 0.
+  //
+  UINT32                    Reserved3;
+
+  //
   // Must be set to NULL. (Potential future use: extended section configuration.)
   //
-  VOID const                *Reserved3;
+  VOID const                *Reserved4;
 } OFFLINE_DUMP_CONFIGURATION_SECTION_INFO;
+
+STATIC_ASSERT (
+               sizeof (OFFLINE_DUMP_CONFIGURATION_SECTION_INFO) == 72,
+               "OFFLINE_DUMP_CONFIGURATION_SECTION_INFO should be 72 bytes"
+               );
 
 /**
   Dump configuration information returned to the writer by the protocol implementation's
@@ -250,11 +262,11 @@ typedef struct {
   //
   // The block device to which the dump should be written, or NULL for default device.
   //
-  // If the implementation has custom behavior for selecting the device to which, it
+  // If the implementation has custom behavior for selecting the dump device, it
   // should provide the device's handle here. Otherwise, it should set this to NULL to
   // accept default behavior, which will be similar to FindOfflineDumpPartitionHandle().
   //
-  // If specified, the provided device must implement EFI_BLOCK_IO2_PROTOCOL (preferred)
+  // If non-NULL, the provided device must implement EFI_BLOCK_IO2_PROTOCOL (preferred)
   // or EFI_BLOCK_IO_PROTOCOL. Normally the provided device is the handle of a partition,
   // not the handle of a physical device. The dump will be written directly to this device,
   // starting at LBA 0 (no filesystem is involved).
@@ -297,12 +309,12 @@ typedef struct {
   //
   // The CONTEXT_ARM64 and CONTEXT_AMD64 structures are defined in <Guid/OfflineDumpCpuContext.h>.
   //
-  VOID const               *pCpuContexts;
+  VOID const    *pCpuContexts;
 
   //
   // Number of elements in the pCpuContexts array (number of cores on the system).
   //
-  UINT32                   CpuContextCount;
+  UINT32        CpuContextCount;
 
   //
   // The size of each element in the pCpuContexts array.
@@ -317,13 +329,13 @@ typedef struct {
   //
   // 4-character vendor ACPI ID. This is used in the generated SYSTEM_INFORMATION section.
   //
-  CHAR8                    Vendor[4];
+  CHAR8 const              *pVendor;
 
   //
   // 8-character silicon vendor platform ID. This is used in the generated SYSTEM_INFORMATION
   // section.
   //
-  CHAR8                    Platform[8];
+  CHAR8 const              *pPlatform;
 
   //
   // Bucketization parameters for the dump. These are used in the generated DUMP_REASON
@@ -385,14 +397,14 @@ typedef struct {
   //
   // - If BufferMemoryLimit == 0 then ActualBufferMemoryLimit will be set to a default
   //   value.
-  // - Else if BufferMemoryLimit < BlockSize * ActualBufferCount then ActualBufferMemoryLimit
-  //   will be set to BlockSize * ActualBufferCount.
+  // - Else if BufferMemoryLimit < BlockSize * ActualBufferCount then
+  //   ActualBufferMemoryLimit will be set to BlockSize * ActualBufferCount.
   // - Else ActualBufferMemoryLimit will be set to BufferMemoryLimit.
   //
   // This value is used to determine
   // ActualBufferSize = RoundDownToBlockSize(ActualBufferMemoryLimit / ActualBufferCount).
   //
-  // Note this does not cap total memory usage of the writer. The dump writer also
+  // Note that this does not cap total memory usage of the writer. The dump writer also
   // allocates several other buffers, e.g. it allocates SectionCount * 64 bytes to track
   // section headers.
   //
@@ -413,22 +425,22 @@ typedef struct {
 
   @param[in]   pThis            A pointer to the OFFLINE_DUMP_CONFIGURATION_PROTOCOL instance.
   @param[in]   SessionInfoSize  The size of the pSessionInfo buffer (i.e.
-                                sizeof(OFFLINE_DUMP_CONFIGURATION_SESSION_INFO when the writer was
+                                sizeof(OFFLINE_DUMP_CONFIGURATION_SESSION_INFO) when the writer was
                                 compiled). The protocol implementation should not read more than
                                 this many bytes from the buffer.
-  @param[out]  pSessionInfo     A pointer to a buffer that contains session information
+  @param[in]   pSessionInfo     A pointer to a buffer that contains session information
                                 (information that the writer provides to the protocol).
   @param[in]   DumpInfoSize     The size of the pDumpInfo buffer (i.e.
-                                sizeof(OFFLINE_DUMP_CONFIGURATION_DUMP_INFO when the writer was
+                                sizeof(OFFLINE_DUMP_CONFIGURATION_DUMP_INFO) when the writer was
                                 compiled). The protocol implementation should not write more than
                                 this many bytes to the buffer.
   @param[out]  pDumpInfo        A pointer to a buffer that receives the dump information
                                 (information that the protocol returns to the writer).
 
   @returns                      EFI_SUCCESS if the dump information was successfully written to
-                                pInfo. An error code if the dump information could not be
-                                written to pInfo (writer will fail writing the dump and will
-                                return the specified error).
+                                pDumpInfo. An error code if the dump information could not be
+                                written to pDumpInfo (writer will fail writing the dump, will not
+                                invoke the End method, and will return the specified error).
 **/
 typedef
   EFI_STATUS
@@ -443,7 +455,9 @@ typedef
 /**
   Called by the writer every few seconds to report on dump progress.
 
-  The implementation should use this function to update UI to reflect dump progress.
+  TODO: Do we really need this to return an error code?
+
+  The protocol implementation uses this function to update UI to reflect dump progress.
   For example, the implementation might update a progress bar or blink an LED.
 
   @param[in]   pThis          A pointer to the OFFLINE_DUMP_CONFIGURATION_PROTOCOL instance.
@@ -466,7 +480,7 @@ typedef
 /**
   Called by the writer when it has finished writing the dump. The protocol
   implementation uses this function to clean up any state needed for the dump
-  and process the success/failure of the dump process.
+  and to process the success/failure of the dump.
 
   @param[in] pThis   A pointer to the OFFLINE_DUMP_CONFIGURATION_PROTOCOL instance.
   @param[in] Status  EFI_SUCCESS if the dump was successfully written. An error code otherwise.
