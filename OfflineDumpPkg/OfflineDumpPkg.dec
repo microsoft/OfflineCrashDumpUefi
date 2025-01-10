@@ -12,6 +12,7 @@
 [Includes.Common.Private]
 
   Private
+  Include\Library
 
 [LibraryClasses]
 
@@ -36,7 +37,7 @@
 
 [PcdsFixedAtBuild]
 
-  ## Block device identification strategy used by sample apps:
+  ## Block device identification strategy used by sample app:
   ## FALSE: Expect 1 raw block device and use it. (Good for testing in emulator.)
   ## TRUE: Expect 1 GPT partition with Type = OffDmp. (Good for normal usage.)
   gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|TRUE|BOOLEAN|0x00001001

@@ -1,4 +1,4 @@
-#include <OfflineDumpEncryptor.h>
+#include <Library/OfflineDumpEncryptor.h>
 
 typedef struct {
   UINT64    Lo;

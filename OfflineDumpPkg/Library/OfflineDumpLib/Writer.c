@@ -1,6 +1,6 @@
-#include <OfflineDumpWriter.h>
-#include <OfflineDumpEncryptor.h>
-#include <OfflineDumpVariables.h>
+#include <Library/OfflineDumpWriter.h>
+#include <Library/OfflineDumpEncryptor.h>
+#include <Library/OfflineDumpVariables.h>
 
 #include <Uefi.h>
 #include <Protocol/BlockIo.h>

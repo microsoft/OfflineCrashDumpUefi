@@ -4,11 +4,11 @@
   offline crash dumps.
 
 - **[Libraries](OfflineDumpPkg/Include/Library/)** -- support code for writing offline crash dumps.
-  In particular, use [OFFLINE_DUMP_WRITER](OfflineDumpPkg/Include/Library/OfflineDumpWriter.h) to write
+  In particular, use [OfflineDumpCollect](OfflineDumpPkg/Include/Library/OfflineDumpLib.h) to write
   dumps.
 
 - **[Application](OfflineDumpPkg/Application/OfflineDumpApp/)** -- sample shows how to generate an offline
-  crash dump using `OFFLINE_DUMP_WRITER`.
+  crash dump using `OfflineDumpCollect`.
 
 ## EDK2 build environment (Windows)
 
@@ -112,26 +112,14 @@ these bugs have been fixed. You may encounter hangs or errors if using an old ve
 
 ## Future Directions
 
-At present, the `OFFLINE_DUMP_WRITER` class is the top layer of the provided library. To create a dump,
-you construct a `OFFLINE_DUMP_WRITER`, write sections, and close the dump writer.
+At present, `OfflineDumpCollect` is a function, and you link with `OfflineDumpLib` to call it.
 
-In the future, the `OFFLINE_DUMP_WRITER` will become a private implementation detail. The top layer of the
-library will be a single `WriteDump` function that takes a `pDumpConfigurationProtocol` parameter.
-`pDumpConfigurationProtocol` will point to a structure with all of the information needed to write the dump:
+In the future, `OfflineDumpCollect` will probably be moved into a separate binary,
+the `OfflineDumpCollect.efi` application. Then to call it, you would:
 
-- Required: CPU context data to be included in the dump.
-- Required: Dump reason data to be included in the dump.
-- Required: System information data to be included in the dump.
-- Required: List of DDR_RANGE sections to be included in the dump.
-- Required: Progress callback (to blink a progress LED or update the screen).
-- Optional: Redaction list for Secure Kernel memory.
-- Optional: List of other sections to be included in the dump (e.g. SV_SPECIFIC).
-- Optional: Custom rules for locating the block device to which the dump should be written.
-- Optional: Other customizations, e.g. memory management tuning parameters.
-
-In the future, this functionality may be distributed as a binary EFI application rather than as source
-code. The implementor will install an OfflineDumpConfiguration protocol and the application will use
-it to configure the resulting offline crash dump.
+1. Add your `OFFLINE_DUMP_CONFIGURATION_PROTOCOL` instance to the EFI handle table.
+2. Run the `OfflineDumpCollect.efi` application.
+3. Remove your `OFFLINE_DUMP_CONFIGURATION_PROTOCOL` instance from the EFI handle table.
 
 ## Contributing
 

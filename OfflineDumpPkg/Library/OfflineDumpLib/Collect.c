@@ -1,7 +1,6 @@
-#include <OfflineDumpCollect.h>
-#include <OfflineDumpPartition.h>
-#include <OfflineDumpWriter.h>
-#include <OfflineDumpVariables.h>
+#include <OfflineDumpLib.h>
+#include <Library/OfflineDumpWriter.h>
+#include <Library/OfflineDumpVariables.h>
 
 #include <Protocol/OfflineDumpConfiguration.h>
 #include <Guid/OfflineDumpCpuContext.h>
@@ -28,6 +27,36 @@ AsciiStrnCpy (
   }
 }
 
+// Returns NULL if the section is ok, else a string describing the reason it is skipped.
+static CHAR8 const *
+OfflineDumpSectionSkipReason (
+  IN OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const  *pSection
+  )
+{
+  switch (pSection->Type) {
+    case RAW_DUMP_SECTION_DDR_RANGE:
+    case RAW_DUMP_SECTION_SV_SPECIFIC:
+      break;
+    default:
+      return "unsupported Type";
+  }
+
+  if ((pSection->Reserved1 != 0) ||
+
+      (pSection->Reserved2 != 0) ||
+      (pSection->Reserved3 != 0) ||
+      (pSection->Reserved4 != NULL))
+  {
+    return "non-zero Reserved field";
+  }
+
+  if (pSection->Flags & (RAW_DUMP_SECTION_HEADER_DUMP_VALID | RAW_DUMP_SECTION_HEADER_INSUFFICIENT_STORAGE)) {
+    return "prohibited flag in Flags";
+  }
+
+  return NULL;
+}
+
 static EFI_STATUS
 OfflineDumpWrite (
   IN OFFLINE_DUMP_CONFIGURATION_PROTOCOL const   *pConfiguration,
@@ -38,18 +67,35 @@ OfflineDumpWrite (
   OFFLINE_DUMP_WRITER           *pDumpWriter = NULL;
   RAW_DUMP_SECTION_INFORMATION  Information;
 
+  // Count the sections and bytes to write.
+
+  UINT32  FinalSectionCount = 0;
+  UINT64  ExpectedBytes     = 0; // Only for progress reporting. Doesn't include small sections.
+
+  for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
+    OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &pDumpInfo->pSections[SectionIndex];
+    if (NULL != OfflineDumpSectionSkipReason (pSection)) {
+      continue;
+    }
+
+    FinalSectionCount += 1;
+    ExpectedBytes     += pSection->DataSize;
+  }
+
+  FinalSectionCount += 3; // Account for SYSTEM_INFORMATION, DUMP_REASON, CPU_CONTEXT.
+
   // Open the dump writer.
   {
     OFFLINE_DUMP_WRITER_OPTIONS  Options = {
-      .DisableBlockIo2   = pDumpInfo->DisableBlockIo2,
-      .ForceUnencrypted  = pDumpInfo->ForceUnencrypted,
-      .BufferCount       = pDumpInfo->BufferCount,
-      .BufferMemoryLimit = pDumpInfo->BufferMemoryLimit,
+      .DisableBlockIo2   = pDumpInfo->Options.DisableBlockIo2,
+      .ForceUnencrypted  = pDumpInfo->Options.ForceUnencrypted,
+      .BufferCount       = pDumpInfo->Options.BufferCount,
+      .BufferMemoryLimit = pDumpInfo->Options.BufferMemoryLimit,
     };
     Status = OfflineDumpWriterOpen (
                                     pDumpInfo->BlockDevice,
                                     pDumpInfo->Flags,
-                                    pDumpInfo->SectionCount + 3, // 3 = SYSTEM_INFORMATION + DUMP_REASON + CPU_CONTEXT.
+                                    FinalSectionCount,
                                     &Options,
                                     &pDumpWriter
                                     );
@@ -140,16 +186,12 @@ OfflineDumpWrite (
 
   // Other sections
 
-  UINT64  ExpectedBytes = 0;
+  UINT64  WrittenBytes = 0; // Only for progress reporting. Doesn't include small sections.
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
     OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &pDumpInfo->pSections[SectionIndex];
-
-    ExpectedBytes += pSection->DataSize;
-  }
-
-  UINT64  WrittenBytes = 0;
-  for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &pDumpInfo->pSections[SectionIndex];
+    if (NULL != OfflineDumpSectionSkipReason (pSection)) {
+      continue;
+    }
 
     // TODO: Move this into OfflineDumpWriterWriteSection so that it can be called every N bytes,
     // even when the section is large.
@@ -173,13 +215,16 @@ OfflineDumpWrite (
         MinorVersion = RAW_DUMP_DDR_RANGE_CURRENT_MINOR_VERSION;
         pName        = pSection->pName && pSection->pName[0] ? pSection->pName : "DDR";
         break;
+
       case RAW_DUMP_SECTION_SV_SPECIFIC:
         MajorVersion = RAW_DUMP_SV_SPECIFIC_CURRENT_MAJOR_VERSION;
         MinorVersion = RAW_DUMP_SV_SPECIFIC_CURRENT_MINOR_VERSION;
         pName        = pSection->pName && pSection->pName[0] ? pSection->pName : "SV";
         break;
+
       default:
-        DEBUG_PRINT (DEBUG_WARN, "Unsupported section type %u for section %u\n", pSection->Type, SectionIndex);
+        // This should never happen because we already checked for unsupported types.
+        ASSERT (FALSE);
         continue;
     }
 
@@ -275,7 +320,7 @@ OfflineDumpCollect (
 
   // Validate DumpInfo
 
-  if (DumpInfo.SectionCount > 0x8000000) {
+  if (DumpInfo.SectionCount > 0x80000000) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.SectionCount %u is too large\n", DumpInfo.SectionCount);
     Status = EFI_UNSUPPORTED;
     goto Done;
@@ -297,29 +342,32 @@ OfflineDumpCollect (
     goto Done;
   }
 
+  if (DumpInfo.Options.Reserved1 != 0) {
+    // Not fatal.
+    DEBUG_PRINT (DEBUG_WARN, "DumpInfo.Options.Reserved1 is non-zero\n");
+  }
+
+  if (DumpInfo.Options.Reserved2 != 0) {
+    // Not fatal.
+    DEBUG_PRINT (DEBUG_WARN, "DumpInfo.Options.Reserved2 is non-zero\n");
+  }
+
   if (DumpInfo.Reserved) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Reserved is non-NULL\n");
     Status = EFI_UNSUPPORTED;
     goto Done;
   }
 
-  if (DumpInfo.ForceUnencrypted) {
+  if (DumpInfo.Options.ForceUnencrypted) {
     DEBUG_PRINT (DEBUG_WARN, "Forcing unencrypted dump\n");
   }
 
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
     OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &DumpInfo.pSections[SectionIndex];
 
-    if (pSection->Flags & (RAW_DUMP_SECTION_HEADER_DUMP_VALID | RAW_DUMP_SECTION_HEADER_INSUFFICIENT_STORAGE)) {
-      DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Sections[%u].Flags 0x%X contains a prohibited flag\n", SectionIndex, pSection->Flags);
-      Status = EFI_UNSUPPORTED;
-      goto Done;
-    }
-
-    if ((pSection->Reserved1 != 0) || (pSection->Reserved2 != 0) || (pSection->Reserved3 != 0) || (pSection->Reserved4 != NULL)) {
-      DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Sections[%u].Reserved field is non-zero\n", SectionIndex);
-      Status = EFI_UNSUPPORTED;
-      goto Done;
+    CHAR8 const  *pSkipReason = OfflineDumpSectionSkipReason (pSection);
+    if (pSkipReason != NULL) {
+      DEBUG_PRINT (DEBUG_WARN, "DumpInfo.Sections[%u] skipped: %a\n", SectionIndex, pSkipReason);
     }
   }
 

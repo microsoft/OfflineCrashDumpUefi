@@ -1,5 +1,4 @@
-#include <OfflineDumpCollect.h>         // OfflineDumpCollect
-#include <OfflineDumpPartition.h>       // FindOfflineDumpPartitionHandle
+#include <OfflineDumpLib.h>
 #include <Guid/OfflineDumpCpuContext.h> // CONTEXT_AMD64, CONTEXT_ARM64
 
 #include <Uefi.h>
@@ -105,7 +104,7 @@ SampleBegin (
   Status = PcdGetBool (PcdOfflineDumpUsePartition)
            // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
            ? FindOfflineDumpPartitionHandle (&DumpInfo.BlockDevice)
-           // For testing on Emulator: Look for a raw block device that is not a partition.
+           // For testing on X86 Emulator: Look for a raw block device that is not a partition.
            : FindOfflineDumpRawBlockDeviceHandleForTesting (&DumpInfo.BlockDevice);
   if (EFI_ERROR (Status)) {
     Print (L"Dump error: FindOfflineDumpPartitionHandle failed (%r)\n", Status);
@@ -179,6 +178,10 @@ UefiMain (
   UINTN   DescriptorSize;
   UINT32  DescriptorVersion;
 
+  // Get the memory map.
+  // TODO: Real crash dump will probably use a customized memory map to include carve-outs and exclude
+  // UEFI boot-time memory.
+
   Status = gBS->GetMemoryMap (&MemoryMapSize, (EFI_MEMORY_DESCRIPTOR *)MemoryMap, &MapKey, &DescriptorSize, &DescriptorVersion);
   if (Status != EFI_BUFFER_TOO_SMALL) {
     Print (L"GetMemoryMap() failed (%r)\n", Status);
@@ -201,7 +204,8 @@ UefiMain (
 
   UINT32  SectionsCount = 0;
 
-  // Count one SV_SPECIFIC section (HelloSection)
+  // Count one SV_SPECIFIC section (HelloSection for demonstration purposes)
+  // TODO: Real crash dump will likely include several SV_SPECIFIC sections.
   SectionsCount += 1;
 
   // Count the DDR_RANGE sections.
@@ -285,6 +289,14 @@ UefiMain (
     .Flags                = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
   };
 
+  // TODO: Temporary/transitional.
+  //
+  // Currently, this is a normal function call.
+  // In the future, this will be a call to a separate module as follows:
+  //
+  // 1. Add the protocol to the EFI handle table.
+  // 2. Run the "OfflineDumpCollect.efi" application.
+  // 3. Unload the protocol from the EFI handle table.
   Status = OfflineDumpCollect (&Protocol.Base);
 
 Done:

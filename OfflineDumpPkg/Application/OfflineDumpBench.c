@@ -1,5 +1,5 @@
-#include <OfflineDumpWriter.h>
-#include <OfflineDumpPartition.h>
+#include <OfflineDumpLib.h>
+#include <Library/OfflineDumpWriter.h>
 
 #include <Uefi.h>
 #include <Protocol/ShellParameters.h>

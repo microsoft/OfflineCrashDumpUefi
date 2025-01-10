@@ -4,6 +4,20 @@
   The UEFI vendor implements this protocol to provide dump information to the
   Offline Crash Dump writer and to configure writer behavior.
 
+  - OFFLINE_DUMP_CONFIGURATION_PROTOCOL (struct)
+  - OFFLINE_DUMP_CONFIGURATION_PROTOCOL_REVISION (enum)
+  - OFFLINE_DUMP_CONFIGURATION_SESSION_INFO (struct)
+  - OFFLINE_DUMP_CONFIGURATION_WRITER_OPTIONS (struct)
+  - OFFLINE_DUMP_CONFIGURATION_SECTION_INFO (struct)
+  - OFFLINE_DUMP_CONFIGURATION_DUMP_INFO (struct)
+  - OFFLINE_DUMP_CONFIGURATION_BEGIN (function pointer)
+  - OFFLINE_DUMP_CONFIGURATION_REPORT_PROGRESS (function pointer)
+  - OFFLINE_DUMP_CONFIGURATION_END (function pointer)
+  - OFFLINE_DUMP_DATA_COPY (function pointer)
+
+  TODO: Better names for this header, protocol, and structures?
+  TODO: Better name for OfflineCrashDumpApp.efi?
+  TODO: Name for the Microsoft-supplied component? "writer" or "collector" or ...?
 **/
 
 #ifndef _included_Protocol_OfflineDumpConfiguration_h
@@ -15,10 +29,7 @@
 
 // {56B79CF2-9D1F-42FC-B45A-16BBBA5C623A}
 #define OFFLINE_DUMP_CONFIGURATION_PROTOCOL_GUID \
-  { \
-    0x56b79cf2, 0x9d1f, 0x42fc, { 0xb4, 0x5a, 0x16, 0xbb, 0xba, 0x5c, 0x62, 0x3a } \
-  } \
-
+  { 0x56b79cf2, 0x9d1f, 0x42fc, { 0xb4, 0x5a, 0x16, 0xbb, 0xba, 0x5c, 0x62, 0x3a } }
 
 /**
   Protocol implemented by UEFI vendor to provide dump information to the Offline
@@ -32,6 +43,7 @@
   - OfflineCrashDumpApp.efi calls the protocol's End function.
   - OfflineCrashDumpApp.efi exits.
   - UEFI vendor updates dump status variables and reboots.
+
 **/
 typedef struct _OFFLINE_DUMP_CONFIGURATION_PROTOCOL OFFLINE_DUMP_CONFIGURATION_PROTOCOL;
 
@@ -42,7 +54,7 @@ typedef struct _OFFLINE_DUMP_CONFIGURATION_PROTOCOL OFFLINE_DUMP_CONFIGURATION_P
   of the OFFLINE_DUMP_CONFIGURATION_PROTOCOL protocol structure. The writer uses this value
   to determine which fields of the protocol structure can be accessed. It will never access
   fields that were added in a later revision and will use a default value instead (typically
-   NULL or 0).
+  NULL or 0).
 
   The writer implementation provides its revision value when calling the Begin
   function. The protocol implementation uses this value to determine which features the
@@ -64,8 +76,6 @@ STATIC_ASSERT (
 /**
   Callback used for reading the section data, e.g. to access fenced memory regions.
   Used in the OFFLINE_DUMP_CONFIGURATION_SECTION_INFO structure's DataCopyCallback field.
-
-  TODO: Should this take a pThis parameter that points to the protocol instance?
 
   @param[in]  pDataStart      The value of the opaque pDataStart parameter that was set in
                               OFFLINE_DUMP_CONFIGURATION_SECTION_INFO.
@@ -133,6 +143,8 @@ typedef
     OFFLINE_DUMP_CONFIGURATION_SESSION_INFO SessionInfoCopy = { 0 };
     CopyMem(&SessionInfoCopy, pSessionInfo, MIN(sizeof(SessionInfoCopy), SessionInfoSize));
     // ... Use SessionInfoCopy rather than reading from pSessionInfo ...
+
+  TODO: Better name for this struct?
 **/
 typedef struct {
   //
@@ -152,8 +164,88 @@ typedef struct {
 } OFFLINE_DUMP_CONFIGURATION_SESSION_INFO;
 
 /**
+  Information provided by the protocol implementation to the writer to control writer
+  behavior. This information is provided in the Options field of
+  OFFLINE_DUMP_CONFIGURATION_DUMP_INFO.
+**/
+typedef struct {
+  //
+  // Maximum total bytes to allocate for the dump writer's I/O buffers (soft limit). If
+  // this is 0, the writer will select a reasonable default (currently 3MB).
+  //
+  // - If BufferMemoryLimit == 0 then ActualBufferMemoryLimit will be set to a default
+  //   value.
+  // - Else if BufferMemoryLimit < BlockSize * ActualBufferCount then
+  //   ActualBufferMemoryLimit will be set to BlockSize * ActualBufferCount.
+  // - Else ActualBufferMemoryLimit will be set to BufferMemoryLimit.
+  //
+  // This value is used to determine
+  // ActualBufferSize = RoundDownToBlockSize(ActualBufferMemoryLimit / ActualBufferCount).
+  //
+  // Note that this does not cap total memory usage of the writer. The dump writer also
+  // allocates several other buffers, e.g. it allocates SectionCount * 64 bytes to track
+  // section headers.
+  //
+  UINT32    BufferMemoryLimit;
+
+  //
+  // Number of data buffers to use for async I/O. Significant only if the device supports
+  // async I/O (EFI_BLOCK_IO2_PROTOCOL). If this is 0, the writer will select a
+  // reasonable default (currently 3).
+  //
+  // Current implementation:
+  //
+  // - If the device only supports EFI_BLOCK_IO_PROTOCOL or if DisableBlockIo2 is TRUE
+  //   then ActualBufferCount will be set to 1.
+  // - Else if BufferCount == 0 then ActualBufferCount will be set to a default value.
+  // - Else if BufferCount < 2 then ActualBufferCount will be set to 2.
+  // - Else ActualBufferCount will be set to BufferCount.
+  //
+  UINT8    BufferCount;
+
+  //
+  // If TRUE, the writer should use EFI_BLOCK_IO_PROTOCOL (synchronous I/O) even if the
+  // device supports EFI_BLOCK_IO2_PROTOCOL. Set this to improve performance if a
+  // device implements the BLOCK_IO2 protocol but does not actually implement async
+  // operations, e.g. the EDK2 ATA driver.
+  //
+  // Implementation detail: in addition to forcing the use of EFI_BLOCK_IO_PROTOCOL, this
+  // flag also affects how the writer manages buffers. Since the device does not support
+  // async I/O, the writer will allocate one large buffer instead of several smaller buffers.
+  //
+  BOOLEAN    DisableBlockIo2  : 1;
+
+  //
+  // For testing/debugging purposes.
+  // If TRUE, the writer should not set the DUMP_VALID flag when finalizing the dump.
+  //
+  BOOLEAN    ForceDumpInvalid : 1;
+
+  //
+  // For testing/debugging purposes - production builds MUST NOT set this flag.
+  // If TRUE, the writer should not encrypt the dump.
+  //
+  BOOLEAN    ForceUnencrypted : 1;
+
+  //
+  // Reserved - must be set to 0.
+  //
+  BOOLEAN    Reserved1        : 5;
+
+  //
+  // Reserved - must be set to 0.
+  //
+  UINT16     Reserved2;
+} OFFLINE_DUMP_CONFIGURATION_WRITER_OPTIONS;
+
+STATIC_ASSERT (
+               sizeof (OFFLINE_DUMP_CONFIGURATION_WRITER_OPTIONS) == 8,
+               "OFFLINE_DUMP_CONFIGURATION_WRITER_OPTIONS should be 8 bytes"
+               );
+
+/**
   Information provided by the protocol implementation to the writer about a section to be included
-  in the dump. This information is provided in the pSections array of OFFLINE_DUMP_CONFIGURATION_DUMP_INFO.
+  in the dump. This information is provided in the pSections field of OFFLINE_DUMP_CONFIGURATION_DUMP_INFO.
 
   Note that in some cases, a single OFFLINE_DUMP_CONFIGURATION_SECTION_INFO element may result in
   multiple sections being written to the dump, or it may be ignored entirely. For example:
@@ -260,20 +352,22 @@ STATIC_ASSERT (
 */
 typedef struct {
   //
+  // Configuration options for the writer. Usually the default (0) values are ok.
+  //
+  OFFLINE_DUMP_CONFIGURATION_WRITER_OPTIONS    Options;
+
+  //
   // The block device to which the dump should be written, or NULL for default device.
   //
-  // If the implementation has custom behavior for selecting the dump device, it
-  // should provide the device's handle here. Otherwise, it should set this to NULL to
-  // accept default behavior, which will be similar to FindOfflineDumpPartitionHandle().
+  // If set to non-NULL, the writer will use the specified device. The device must implement
+  // EFI_BLOCK_IO2_PROTOCOL (preferred) or EFI_BLOCK_IO_PROTOCOL. Normally the device is the
+  // handle of a partition, not the handle of a physical device. The dump will be written
+  // directly to this device, starting at LBA 0 (no filesystem is involved).
   //
-  // If non-NULL, the provided device must implement EFI_BLOCK_IO2_PROTOCOL (preferred)
-  // or EFI_BLOCK_IO_PROTOCOL. Normally the provided device is the handle of a partition,
-  // not the handle of a physical device. The dump will be written directly to this device,
-  // starting at LBA 0 (no filesystem is involved).
-  //
-  // If set to NULL, the writer will use default behavior, guided by the value of
-  // UseCapabilityFlags. If the default behavior is unable to find an appropriate device,
-  // the writer will fail to write a dump and will end the dump with status EFI_NOT_FOUND.
+  // If set to NULL, the writer will attempt to locate an appropriate device, guided by the
+  // value of the OfflineMemoryDumpUseCapability variable. If the writer is unable to find
+  // an appropriate device, the writer will fail to write a dump and will end the dump with
+  // status EFI_NOT_FOUND.
   //
   EFI_HANDLE    BlockDevice;
 
@@ -353,68 +447,10 @@ typedef struct {
   RAW_DUMP_HEADER_FLAGS    Flags;
 
   //
-  // If TRUE, the writer should use EFI_BLOCK_IO_PROTOCOL (synchronous I/O) even if the
-  // device supports EFI_BLOCK_IO2_PROTOCOL. Set this to improve performance if a
-  // device implements the BLOCK_IO2 protocol but does not actually implement async
-  // operations, e.g. the EDK2 ATA driver.
-  //
-  // Implementation detail: in addition to forcing the use of EFI_BLOCK_IO_PROTOCOL, this
-  // flag also affects how the writer manages buffers. Since the device does not support
-  // async I/O, the writer will allocate one large buffer instead of several smaller buffers.
-  //
-  BOOLEAN    DisableBlockIo2;
-
-  //
-  // For testing/debugging purposes.
-  // If TRUE, the writer should not set the DUMP_VALID flag when finalizing the dump.
-  //
-  BOOLEAN    ForceDumpInvalid;
-
-  //
-  // For testing/debugging purposes - production builds MUST NOT set this flag.
-  // If TRUE, the writer should not encrypt the dump.
-  //
-  BOOLEAN    ForceUnencrypted;
-
-  //
-  // Number of data buffers to use for async I/O. Significant only if the device supports
-  // async I/O (EFI_BLOCK_IO2_PROTOCOL). If this is 0, the writer will select a
-  // reasonable default (currently 3).
-  //
-  // Current implementation:
-  //
-  // - If the device only supports EFI_BLOCK_IO_PROTOCOL or if DisableBlockIo2 is TRUE
-  //   then ActualBufferCount will be set to 1.
-  // - Else if BufferCount == 0 then ActualBufferCount will be set to a default value.
-  // - Else if BufferCount < 2 then ActualBufferCount will be set to 2.
-  // - Else ActualBufferCount will be set to BufferCount.
-  //
-  UINT8    BufferCount;
-
-  //
-  // Maximum total bytes to allocate for the dump writer's I/O buffers (soft limit). If
-  // this is 0, the writer will select a reasonable default (currently 3MB).
-  //
-  // - If BufferMemoryLimit == 0 then ActualBufferMemoryLimit will be set to a default
-  //   value.
-  // - Else if BufferMemoryLimit < BlockSize * ActualBufferCount then
-  //   ActualBufferMemoryLimit will be set to BlockSize * ActualBufferCount.
-  // - Else ActualBufferMemoryLimit will be set to BufferMemoryLimit.
-  //
-  // This value is used to determine
-  // ActualBufferSize = RoundDownToBlockSize(ActualBufferMemoryLimit / ActualBufferCount).
-  //
-  // Note that this does not cap total memory usage of the writer. The dump writer also
-  // allocates several other buffers, e.g. it allocates SectionCount * 64 bytes to track
-  // section headers.
-  //
-  UINT32    BufferMemoryLimit;
-
-  //
   // Reserved. Must be set to NULL.
   // Potential future use: Secure-Kernel redaction information.
   //
-  VOID      *Reserved;
+  VOID                     *Reserved;
 } OFFLINE_DUMP_CONFIGURATION_DUMP_INFO;
 
 /**

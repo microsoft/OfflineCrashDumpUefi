@@ -1,4 +1,4 @@
-#include <OfflineDumpPartition.h>
+#include <OfflineDumpLib.h>
 #include <Guid/OfflineDumpConfig.h>
 
 #include <Uefi.h>
