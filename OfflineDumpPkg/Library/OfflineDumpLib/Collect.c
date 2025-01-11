@@ -2,7 +2,7 @@
 #include <Library/OfflineDumpWriter.h>
 #include <Library/OfflineDumpVariables.h>
 
-#include <Protocol/OfflineDumpConfiguration.h>
+#include <Protocol/OfflineDumpProvider.h>
 #include <Guid/OfflineDumpCpuContext.h>
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
@@ -30,7 +30,7 @@ AsciiStrnCpy (
 // Returns NULL if the section is ok, else a string describing the reason it is skipped.
 static CHAR8 const *
 OfflineDumpSectionSkipReason (
-  IN OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const  *pSection
+  IN OFFLINE_DUMP_PROVIDER_SECTION const  *pSection
   )
 {
   switch (pSection->Type) {
@@ -59,8 +59,8 @@ OfflineDumpSectionSkipReason (
 
 static EFI_STATUS
 OfflineDumpWrite (
-  IN OFFLINE_DUMP_CONFIGURATION_PROTOCOL const   *pConfiguration,
-  IN OFFLINE_DUMP_CONFIGURATION_DUMP_INFO const  *pDumpInfo
+  IN OFFLINE_DUMP_PROVIDER_PROTOCOL const   *pProvider,
+  IN OFFLINE_DUMP_PROVIDER_DUMP_INFO const  *pDumpInfo
   )
 {
   EFI_STATUS                    Status;
@@ -73,7 +73,7 @@ OfflineDumpWrite (
   UINT64  ExpectedBytes     = 0; // Only for progress reporting. Doesn't include small sections.
 
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &pDumpInfo->pSections[SectionIndex];
+    OFFLINE_DUMP_PROVIDER_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
     if (NULL != OfflineDumpSectionSkipReason (pSection)) {
       continue;
     }
@@ -188,18 +188,18 @@ OfflineDumpWrite (
 
   UINT64  WrittenBytes = 0; // Only for progress reporting. Doesn't include small sections.
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &pDumpInfo->pSections[SectionIndex];
+    OFFLINE_DUMP_PROVIDER_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
     if (NULL != OfflineDumpSectionSkipReason (pSection)) {
       continue;
     }
 
     // TODO: Move this into OfflineDumpWriterWriteSection so that it can be called every N bytes,
     // even when the section is large.
-    Status = pConfiguration->ReportProgress (
-                                             (OFFLINE_DUMP_CONFIGURATION_PROTOCOL *)pConfiguration,
-                                             ExpectedBytes,
-                                             WrittenBytes
-                                             );
+    Status = pProvider->ReportProgress (
+                                        (OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider,
+                                        ExpectedBytes,
+                                        WrittenBytes
+                                        );
     WrittenBytes += pSection->DataSize;
     if (EFI_ERROR (Status)) {
       DEBUG_PRINT (DEBUG_WARN, "ReportProgress returned error (%r), stopping collection\n", Status);
@@ -268,26 +268,26 @@ Done:
 
 EFI_STATUS
 OfflineDumpCollect (
-  IN OFFLINE_DUMP_CONFIGURATION_PROTOCOL const  *pConfiguration
+  IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider
   )
 {
   EFI_STATUS  Status;
 
-  // Validate pConfiguration
+  // Validate pProvider
 
-  if (pConfiguration->Revision < OfflineDumpConfigurationProtocolRevision_1_0) {
+  if (pProvider->Revision < OfflineDumpProviderProtocolRevision_1_0) {
     DEBUG_PRINT (
                  DEBUG_ERROR,
                  "Unsupported protocol revision 0x%X; expected 0x%X or later\n",
-                 pConfiguration->Revision,
-                 OfflineDumpConfigurationProtocolRevision_1_0
+                 pProvider->Revision,
+                 OfflineDumpProviderProtocolRevision_1_0
                  );
     return EFI_UNSUPPORTED;
   }
 
-  if ((pConfiguration->Begin == NULL) ||
-      (pConfiguration->ReportProgress == NULL) ||
-      (pConfiguration->End == NULL))
+  if ((pProvider->Begin == NULL) ||
+      (pProvider->ReportProgress == NULL) ||
+      (pProvider->End == NULL))
   {
     DEBUG_PRINT (DEBUG_ERROR, "One or more required protocol pointers is NULL.\n");
     return EFI_UNSUPPORTED;
@@ -298,20 +298,20 @@ OfflineDumpCollect (
   OFFLINE_DUMP_USE_CAPABILITY_FLAGS  UseCapabilityFlags;
   (void)GetVariableOfflineMemoryDumpUseCapability (&UseCapabilityFlags);
 
-  OFFLINE_DUMP_CONFIGURATION_DUMP_INFO  DumpInfo = { 0 };
+  OFFLINE_DUMP_PROVIDER_DUMP_INFO  DumpInfo = { 0 };
 
   {
-    OFFLINE_DUMP_CONFIGURATION_SESSION_INFO  SessionInfo = { 0 };
-    SessionInfo.WriterRevision     = OfflineDumpConfigurationProtocolRevisionCurrent;
-    SessionInfo.UseCapabilityFlags = UseCapabilityFlags;
+    OFFLINE_DUMP_COLLECTOR_INFO  CollectorInfo = { 0 };
+    CollectorInfo.CollectorRevision  = OfflineDumpProviderProtocolRevisionCurrent;
+    CollectorInfo.UseCapabilityFlags = UseCapabilityFlags;
 
-    Status = pConfiguration->Begin (
-                                    (OFFLINE_DUMP_CONFIGURATION_PROTOCOL *)pConfiguration,
-                                    sizeof (SessionInfo),
-                                    &SessionInfo,
-                                    sizeof (DumpInfo),
-                                    &DumpInfo
-                                    );
+    Status = pProvider->Begin (
+                               (OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider,
+                               sizeof (CollectorInfo),
+                               &CollectorInfo,
+                               sizeof (DumpInfo),
+                               &DumpInfo
+                               );
     if (EFI_ERROR (Status)) {
       DEBUG_PRINT (DEBUG_ERROR, "protocol.Begin failed (%r)\n", Status);
       return Status;
@@ -363,7 +363,7 @@ OfflineDumpCollect (
   }
 
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const * const  pSection = &DumpInfo.pSections[SectionIndex];
+    OFFLINE_DUMP_PROVIDER_SECTION const * const  pSection = &DumpInfo.pSections[SectionIndex];
 
     CHAR8 const  *pSkipReason = OfflineDumpSectionSkipReason (pSection);
     if (pSkipReason != NULL) {
@@ -390,10 +390,10 @@ OfflineDumpCollect (
 
   // Write the dump
 
-  Status = OfflineDumpWrite (pConfiguration, &DumpInfo);
+  Status = OfflineDumpWrite (pProvider, &DumpInfo);
 
 Done:
 
-  pConfiguration->End ((OFFLINE_DUMP_CONFIGURATION_PROTOCOL *)pConfiguration, Status);
+  pProvider->End ((OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider, Status);
   return Status;
 }

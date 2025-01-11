@@ -47,56 +47,55 @@ CopyHelloDataCallback (
 }
 
 typedef struct {
-
   // Protocol implementation must always start with the protocol interface:
 
-  OFFLINE_DUMP_CONFIGURATION_PROTOCOL              Base;
+  OFFLINE_DUMP_PROVIDER_PROTOCOL         Base;
 
   // Additional fields needed by the protocol implementation can go here:
 
-  OFFLINE_DUMP_CONFIGURATION_SECTION_INFO const    *pSections;
-  UINT32                                           SectionCount;
-  RAW_DUMP_ARCHITECTURE                            Architecture;
-  VOID const                                       *pCpuContexts;
-  UINT32                                           CpuContextCount;
-  UINT32                                           CpuContextSize;
-  CHAR8 const                                      *pVendor;
-  CHAR8 const                                      *pPlatform;
-  UINT32                                           DumpReasonParameter1;
-  UINT32                                           DumpReasonParameter2;
-  UINT32                                           DumpReasonParameter3;
-  UINT32                                           DumpReasonParameter4;
-  RAW_DUMP_HEADER_FLAGS                            Flags;
-} SAMPLE_DUMP_CONFIGURATION_PROTOCOL;
+  OFFLINE_DUMP_PROVIDER_SECTION const    *pSections;
+  UINT32                                 SectionCount;
+  RAW_DUMP_ARCHITECTURE                  Architecture;
+  VOID const                             *pCpuContexts;
+  UINT32                                 CpuContextCount;
+  UINT32                                 CpuContextSize;
+  CHAR8 const                            *pVendor;
+  CHAR8 const                            *pPlatform;
+  UINT32                                 DumpReasonParameter1;
+  UINT32                                 DumpReasonParameter2;
+  UINT32                                 DumpReasonParameter3;
+  UINT32                                 DumpReasonParameter4;
+  RAW_DUMP_HEADER_FLAGS                  Flags;
+} SAMPLE_DUMP_PROVIDER_PROTOCOL;
 
-// Simple implementation of the Begin callback for the OfflineDumpConfigurationProtocol.
+// Simple implementation of the Begin callback for the OfflineDumpProviderProtocol.
 // This implementation locates the block device to use for the dump, then fills in the remaining
 // fields of the DumpInfo structure using data from the protocol instance fields.
 static EFI_STATUS
 SampleBegin (
-  IN  OFFLINE_DUMP_CONFIGURATION_PROTOCOL            *pThisBase,
-  IN  UINTN                                          SessionInfoSize,
-  IN  OFFLINE_DUMP_CONFIGURATION_SESSION_INFO const  *pSessionInfo,
-  IN  UINTN                                          DumpInfoSize,
-  OUT OFFLINE_DUMP_CONFIGURATION_DUMP_INFO           *pDumpInfo
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL     *pThisBase,
+  IN  UINTN                              CollectorInfoSize,
+  IN  OFFLINE_DUMP_COLLECTOR_INFO const  *pCollectorInfo,
+  IN  UINTN                              DumpInfoSize,
+  OUT OFFLINE_DUMP_PROVIDER_DUMP_INFO    *pDumpInfo
   )
 {
-  EFI_STATUS                          Status;
-  SAMPLE_DUMP_CONFIGURATION_PROTOCOL  *pThis = (SAMPLE_DUMP_CONFIGURATION_PROTOCOL *)pThisBase;
+  EFI_STATUS                     Status;
+  SAMPLE_DUMP_PROVIDER_PROTOCOL  *pThis = (SAMPLE_DUMP_PROVIDER_PROTOCOL *)pThisBase;
 
   // DumpInfo holds the information we will copy into pDumpInfo.
-  OFFLINE_DUMP_CONFIGURATION_DUMP_INFO  DumpInfo = { 0 };
+  OFFLINE_DUMP_PROVIDER_DUMP_INFO  DumpInfo = { 0 };
 
-  // SessionInfo holds the information we copy from pSessionInfo.
-  OFFLINE_DUMP_CONFIGURATION_SESSION_INFO  SessionInfo = { 0 };
+  // CollectorInfo holds the information we copy from pCollectorInfo.
+  OFFLINE_DUMP_COLLECTOR_INFO  CollectorInfo = { 0 };
 
   // In case of size mismatch between the protocol and the writer, copy the smaller of the two.
-  CopyMem (&SessionInfo, pSessionInfo, MIN (SessionInfoSize, sizeof (SessionInfo)));
+  CopyMem (&CollectorInfo, pCollectorInfo, MIN (CollectorInfoSize, sizeof (CollectorInfo)));
 
   // Fill in DumpInfo:
 
-  if (0 == (SessionInfo.UseCapabilityFlags & OFFLINE_DUMP_USE_CAPABILITY_LOCATION_GPT_SCAN)) {
-    Print (L"Dump disabled: OfflineMemoryDumpUseCapability = 0x%X.\n", SessionInfo.UseCapabilityFlags);
+  if (0 == (CollectorInfo.UseCapabilityFlags & OFFLINE_DUMP_USE_CAPABILITY_LOCATION_GPT_SCAN)) {
+    Print (L"Dump disabled: OfflineMemoryDumpUseCapability = 0x%X.\n", CollectorInfo.UseCapabilityFlags);
     Status = EFI_NOT_STARTED;
     goto Done;
   }
@@ -133,28 +132,28 @@ Done:
   return Status;
 }
 
-// Simple implementation of the End callback for the OfflineDumpConfigurationProtocol.
+// Simple implementation of the End callback for the OfflineDumpProviderProtocol.
 // This will only be called if the Begin callback returns successfully.
 // This implementation just prints the status.
 // A more complex implementation might perform cleanup or might record the status for later use.
 static VOID
 SampleEnd (
-  IN  OFFLINE_DUMP_CONFIGURATION_PROTOCOL  *pThisBase,
-  IN  EFI_STATUS                           Status
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisBase,
+  IN  EFI_STATUS                      Status
   )
 {
   (void)pThisBase; // Parameter not used.
   Print (L"End: %r\n", Status);
 }
 
-// Simple implementation of the ReportProgress callback for the OfflineDumpConfigurationProtocol.
+// Simple implementation of the ReportProgress callback for the OfflineDumpProviderProtocol.
 // This implementation just prints the progress.
 // A more complex implementation might update a progress bar or other UI.
 static EFI_STATUS
 SampleReportProgress (
-  IN  OFFLINE_DUMP_CONFIGURATION_PROTOCOL  *pThisBase,
-  IN  UINT64                               ExpectedBytes,
-  IN  UINT64                               WrittenBytes
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisBase,
+  IN  UINT64                          ExpectedBytes,
+  IN  UINT64                          WrittenBytes
   )
 {
   (void)pThisBase; // Parameter not used.
@@ -168,10 +167,10 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS                               Status;
-  UINT8                                    *MemoryMap = NULL;
-  OFFLINE_DUMP_CONFIGURATION_SECTION_INFO  *Sections  = NULL;
-  OFFLINE_DUMP_CONFIGURATION_SECTION_INFO  *pSection  = NULL;
+  EFI_STATUS                     Status;
+  UINT8                          *MemoryMap = NULL;
+  OFFLINE_DUMP_PROVIDER_SECTION  *Sections  = NULL;
+  OFFLINE_DUMP_PROVIDER_SECTION  *pSection  = NULL;
 
   UINTN   MemoryMapSize = 0;
   UINTN   MapKey;
@@ -220,7 +219,7 @@ UefiMain (
 
   // Allocate the sections array.
 
-  Sections = AllocateZeroPool (SectionsCount * sizeof (OFFLINE_DUMP_CONFIGURATION_SECTION_INFO));
+  Sections = AllocateZeroPool (SectionsCount * sizeof (OFFLINE_DUMP_PROVIDER_SECTION));
   if (Sections == NULL) {
     Print (L"AllocatePool(SectionsCount = %u) failed\n", SectionsCount);
     goto Done;
@@ -269,8 +268,8 @@ UefiMain (
 
   // Create a protocol instance.
 
-  SAMPLE_DUMP_CONFIGURATION_PROTOCOL  Protocol = {
-    .Base.Revision        = OfflineDumpConfigurationProtocolRevision_1_0,
+  SAMPLE_DUMP_PROVIDER_PROTOCOL  Protocol = {
+    .Base.Revision        = OfflineDumpProviderProtocolRevision_1_0,
     .Base.Begin           = SampleBegin,
     .Base.ReportProgress  = SampleReportProgress,
     .Base.End             = SampleEnd,
@@ -279,7 +278,7 @@ UefiMain (
     .Architecture         = RAW_DUMP_ARCHITECTURE_ARM64,
     .pCpuContexts         = CpuContexts,
     .CpuContextCount      = ARRAY_SIZE (CpuContexts),
-    .CpuContextSize       = sizeof(CpuContexts[0]),
+    .CpuContextSize       = sizeof (CpuContexts[0]),
     .pVendor              = "Vend",
     .pPlatform            = "Platform",
     .DumpReasonParameter1 = 0x12345678,

@@ -5,9 +5,9 @@ Microsoft Offline Dump - Functions for working with an Offline Dump.
 #ifndef _included_Library_OfflineDumpLib_h
 #define _included_Library_OfflineDumpLib_h
 
-#include <Protocol/OfflineDumpConfiguration.h>
+#include <Protocol/OfflineDumpProvider.h>
 
-// Collects an offline dump using information from the specified configuration protocol.
+// Collects an offline dump using information from the specified provider.
 //
 // Consumes:
 // 
@@ -22,7 +22,7 @@ Microsoft Offline Dump - Functions for working with an Offline Dump.
 //   OpensslLib
 EFI_STATUS
 OfflineDumpCollect (
-  IN OFFLINE_DUMP_CONFIGURATION_PROTOCOL const  *pConfiguration
+  IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider
   );
 
 // Returns true if the specified handle represents an offline dump partition.
