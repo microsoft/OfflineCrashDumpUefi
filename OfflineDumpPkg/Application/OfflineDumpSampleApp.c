@@ -19,7 +19,8 @@ static CHAR8 const * const  HelloSectionName     = "HelloSection";
 static CHAR8 const          HelloSectionData[]   = "Hello, World!";
 static UINTN const          HelloSectionDataSize = sizeof (HelloSectionData);
 
-// {740A5381-34D6-488d-B03C-A8E6D0181808}
+// Silicon-vendor sections are typically identified by GUID.
+// GUID {740A5381-34D6-488d-B03C-A8E6D0181808} identifies the demonstration "Hello" section.
 static GUID const  HelloSectionGuid =
 {
   0x740a5381, 0x34d6, 0x488d, {
@@ -27,8 +28,8 @@ static GUID const  HelloSectionGuid =
   }
 };
 
-// The data for any section can be provided via a callback.
-// If the callback is specified as NULL, the data will be copied directly (e.g. via CopyMem).
+// Normally, section data is provided as a pointer to a buffer, but it can also be generated
+// by a callback. This is a simple example of a callback that generates a section's data.
 static BOOLEAN EFIAPI
 CopyHelloDataCallback (
   IN void const  *pDataStart,
@@ -37,62 +38,55 @@ CopyHelloDataCallback (
   OUT UINT8      *pDestinationPos
   )
 {
-  // Callback should perform any custom logic needed to access the section's data,
+  // Callback should perform any custom logic needed to generate the section's data,
   // e.g. it could call into a coprocessor to copy the data.
   //
   // In real code, you should not use a callback if you are just performing a normal CopyMem.
-  // If you pass NULL as the callback, the writer will perform an optimized copy using CopyMem.
+  // If you pass NULL as the callback, the collector will perform an optimized copy as if by CopyMem.
   CopyMem (pDestinationPos, (UINT8 *)pDataStart + Offset, Size);
   return TRUE;
 }
 
+// This is the data we need for our implementation of OFFLINE_DUMP_PROVIDER_PROTOCOL.
+// We pass this protocol implementation to the collector.
 typedef struct {
   // Protocol implementation must always start with the protocol interface:
 
-  OFFLINE_DUMP_PROVIDER_PROTOCOL         Base;
+  OFFLINE_DUMP_PROVIDER_PROTOCOL    Protocol;
 
   // Additional fields needed by the protocol implementation can go here:
 
-  OFFLINE_DUMP_PROVIDER_SECTION const    *pSections;
-  UINT32                                 SectionCount;
-  RAW_DUMP_ARCHITECTURE                  Architecture;
-  VOID const                             *pCpuContexts;
-  UINT32                                 CpuContextCount;
-  UINT32                                 CpuContextSize;
-  CHAR8 const                            *pVendor;
-  CHAR8 const                            *pPlatform;
-  UINT32                                 DumpReasonParameter1;
-  UINT32                                 DumpReasonParameter2;
-  UINT32                                 DumpReasonParameter3;
-  UINT32                                 DumpReasonParameter4;
-  RAW_DUMP_HEADER_FLAGS                  Flags;
-} SAMPLE_DUMP_PROVIDER_PROTOCOL;
+  OFFLINE_DUMP_INFO                 DumpInfo;  // Information that will be returned by Begin.
+  EFI_STATUS                        EndStatus; // Status that will be captured by End.
+} SAMPLE_DUMP_PROVIDER;
 
 // Simple implementation of the Begin callback for the OfflineDumpProviderProtocol.
-// This implementation locates the block device to use for the dump, then fills in the remaining
-// fields of the DumpInfo structure using data from the protocol instance fields.
+// This is called by the collector to get dump configuration and dump data.
+// It needs to fill in the pDumpInfo information.
 static EFI_STATUS
 SampleBegin (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL     *pThisBase,
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL     *pThisProtocol,
   IN  UINTN                              CollectorInfoSize,
   IN  OFFLINE_DUMP_COLLECTOR_INFO const  *pCollectorInfo,
   IN  UINTN                              DumpInfoSize,
-  OUT OFFLINE_DUMP_PROVIDER_DUMP_INFO    *pDumpInfo
+  OUT OFFLINE_DUMP_INFO                  *pDumpInfo
   )
 {
-  EFI_STATUS                     Status;
-  SAMPLE_DUMP_PROVIDER_PROTOCOL  *pThis = (SAMPLE_DUMP_PROVIDER_PROTOCOL *)pThisBase;
-
-  // DumpInfo holds the information we will copy into pDumpInfo.
-  OFFLINE_DUMP_PROVIDER_DUMP_INFO  DumpInfo = { 0 };
+  EFI_STATUS                   Status;
+  SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
 
   // CollectorInfo holds the information we copy from pCollectorInfo.
   OFFLINE_DUMP_COLLECTOR_INFO  CollectorInfo = { 0 };
 
-  // In case of size mismatch between the protocol and the writer, copy the smaller of the two.
+  // Copy the collector's CollectorInfo buffer to our local CollectorInfo.
+  // In case of size mismatch between us and the collector, copy the smaller of the two.
   CopyMem (&CollectorInfo, pCollectorInfo, MIN (CollectorInfoSize, sizeof (CollectorInfo)));
 
-  // Fill in DumpInfo:
+  // Begin performs any work needed to prepare for the dump. In this case, most of the work
+  // happened during protocol initialization.
+  //
+  // We want to validate UseCapabilityFlags before searching for the BlockDevice,
+  // so let's do that now.
 
   if (0 == (CollectorInfo.UseCapabilityFlags & OFFLINE_DUMP_USE_CAPABILITY_LOCATION_GPT_SCAN)) {
     Print (L"Dump disabled: OfflineMemoryDumpUseCapability = 0x%X.\n", CollectorInfo.UseCapabilityFlags);
@@ -100,65 +94,61 @@ SampleBegin (
     goto Done;
   }
 
+  // Fill in the BlockDevice value in the protocol's DumpInfo:
   Status = PcdGetBool (PcdOfflineDumpUsePartition)
-           // For normal usage: Look for GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
-           ? FindOfflineDumpPartitionHandle (&DumpInfo.BlockDevice)
+           // For normal dumps: Look for a GPT partition with Type = OFFLINE_DUMP_PARTITION_GUID.
+           ? FindOfflineDumpPartitionHandle (&pThis->DumpInfo.BlockDevice)
            // For testing on X86 Emulator: Look for a raw block device that is not a partition.
-           : FindOfflineDumpRawBlockDeviceHandleForTesting (&DumpInfo.BlockDevice);
+           : FindOfflineDumpRawBlockDeviceHandleForTesting (&pThis->DumpInfo.BlockDevice);
   if (EFI_ERROR (Status)) {
     Print (L"Dump error: FindOfflineDumpPartitionHandle failed (%r)\n", Status);
     goto Done;
   }
 
-  DumpInfo.pSections            = pThis->pSections;
-  DumpInfo.SectionCount         = pThis->SectionCount;
-  DumpInfo.Architecture         = pThis->Architecture;
-  DumpInfo.pCpuContexts         = pThis->pCpuContexts;
-  DumpInfo.CpuContextCount      = pThis->CpuContextCount;
-  DumpInfo.CpuContextSize       = pThis->CpuContextSize;
-  DumpInfo.pVendor              = pThis->pVendor;
-  DumpInfo.pPlatform            = pThis->pPlatform;
-  DumpInfo.DumpReasonParameter1 = pThis->DumpReasonParameter1;
-  DumpInfo.DumpReasonParameter2 = pThis->DumpReasonParameter2;
-  DumpInfo.DumpReasonParameter3 = pThis->DumpReasonParameter3;
-  DumpInfo.DumpReasonParameter4 = pThis->DumpReasonParameter4;
-  DumpInfo.Flags                = pThis->Flags;
+  Status = EFI_SUCCESS;
 
 Done:
 
-  // In case of size mismatch between the protocol and the writer, copy the smaller of the two.
-  CopyMem (pDumpInfo, &DumpInfo, MIN (DumpInfoSize, sizeof (DumpInfo)));
+  // Copy our DumpInfo to the collector's DumpInfo buffer.
+  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  CopyMem (pDumpInfo, &pThis->DumpInfo, MIN (DumpInfoSize, sizeof (pThis->DumpInfo)));
+
   Print (L"Begin: %r\n", Status);
   return Status;
 }
 
 // Simple implementation of the End callback for the OfflineDumpProviderProtocol.
-// This will only be called if the Begin callback returns successfully.
-// This implementation just prints the status.
-// A more complex implementation might perform cleanup or might record the status for later use.
+// This is called by the collector to signal that dump collection has ended.
+// It should perform cleanup as needed.
+// This will be called if and only if the Begin callback returned successfully.
 static VOID
 SampleEnd (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisBase,
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
   IN  EFI_STATUS                      Status
   )
 {
-  (void)pThisBase; // Parameter not used.
-  Print (L"End: %r\n", Status);
+  SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
+
+  pThis->DumpInfo.BlockDevice = NULL; // Cleanup as needed.
+  Print (L"End: %r\n", Status);       // OfflineDumpWrite will return the same status.
 }
 
 // Simple implementation of the ReportProgress callback for the OfflineDumpProviderProtocol.
-// This implementation just prints the progress.
-// A more complex implementation might update a progress bar or other UI.
+// This is called periodically by the collector to give the provider a chance to update progress UI.
+// This will only be called if the Begin callback returned successfully.
 static EFI_STATUS
 SampleReportProgress (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisBase,
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
   IN  UINT64                          ExpectedBytes,
   IN  UINT64                          WrittenBytes
   )
 {
-  (void)pThisBase; // Parameter not used.
+  (void)pThisProtocol; // Parameter not used.
+
+  // This implementation just prints the progress.
+  // A more complex implementation might update a progress bar or other UI.
   Print (L"ReportProgress: %llu/%llu\n", (llu_t)WrittenBytes, (llu_t)ExpectedBytes);
-  return EFI_SUCCESS;
+  return EFI_SUCCESS; // If this returns an error, the collector will stop writing the dump.
 }
 
 EFI_STATUS EFIAPI
@@ -167,10 +157,10 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS                     Status;
-  UINT8                          *MemoryMap = NULL;
-  OFFLINE_DUMP_PROVIDER_SECTION  *Sections  = NULL;
-  OFFLINE_DUMP_PROVIDER_SECTION  *pSection  = NULL;
+  EFI_STATUS            Status;
+  UINT8                 *MemoryMap = NULL;
+  OFFLINE_DUMP_SECTION  *Sections  = NULL;
+  OFFLINE_DUMP_SECTION  *pSection  = NULL;
 
   UINTN   MemoryMapSize = 0;
   UINTN   MapKey;
@@ -178,8 +168,7 @@ UefiMain (
   UINT32  DescriptorVersion;
 
   // Get the memory map.
-  // TODO: Real crash dump will probably use a customized memory map to include carve-outs and exclude
-  // UEFI boot-time memory.
+  // TODO: Real crash dump will probably use a customized memory map to include carve-outs.
 
   Status = gBS->GetMemoryMap (&MemoryMapSize, (EFI_MEMORY_DESCRIPTOR *)MemoryMap, &MapKey, &DescriptorSize, &DescriptorVersion);
   if (Status != EFI_BUFFER_TOO_SMALL) {
@@ -219,7 +208,7 @@ UefiMain (
 
   // Allocate the sections array.
 
-  Sections = AllocateZeroPool (SectionsCount * sizeof (OFFLINE_DUMP_PROVIDER_SECTION));
+  Sections = AllocateZeroPool (SectionsCount * sizeof (OFFLINE_DUMP_SECTION));
   if (Sections == NULL) {
     Print (L"AllocatePool(SectionsCount = %u) failed\n", SectionsCount);
     goto Done;
@@ -233,7 +222,7 @@ UefiMain (
   // For demonstration purposes, use a callback to copy the data.
   // In real code, you would only use a callback if you need to perform custom logic to read/generate the data.
   pSection        = &Sections[SectionsIndex++];
-  pSection->Type  = RAW_DUMP_SECTION_SV_SPECIFIC;
+  pSection->Type  = OfflineDumpSectionTypeSvSpecific;
   pSection->pName = HelloSectionName;
   CopyGuid ((GUID *)pSection->Information.SVSpecific.SVSpecificData, &HelloSectionGuid);
   pSection->pDataStart       = HelloSectionData;
@@ -248,7 +237,7 @@ UefiMain (
     }
 
     pSection                            = &Sections[SectionsIndex++];
-    pSection->Type                      = RAW_DUMP_SECTION_DDR_RANGE;
+    pSection->Type                      = OfflineDumpSectionTypeDdrRange;
     pSection->Information.DdrRange.Base = Desc->PhysicalStart;
     pSection->pDataStart                = (void const *)(UINTN)Desc->PhysicalStart;
     pSection->DataSize                  = EFI_PAGES_TO_SIZE (Desc->NumberOfPages);
@@ -258,45 +247,50 @@ UefiMain (
 
   // Fill in the CPU context data for each core.
 
-  CONTEXT_ARM64  CpuContexts[4] = { 0 }; // TODO: Use the actual number of CPUs.
-  for (unsigned i = 0; i < ARRAY_SIZE (CpuContexts); i += 1) {
+  #define CPU_CONTEXT_COUNT  4 // TODO: Get the actual number of CPU cores.
+  CONTEXT_ARM64  CpuContexts[CPU_CONTEXT_COUNT] = { 0 };
+  UINT32 const   CpuContextCount                = CPU_CONTEXT_COUNT;
+  for (unsigned i = 0; i < CpuContextCount; i += 1) {
     CONTEXT_ARM64  *pContext = &CpuContexts[i];
 
     // TODO: Get real CPU context data that was captured at the time of the crash.
     pContext->Pc = 0x1234;
   }
 
-  // Create a protocol instance.
+  // Create our provider.
 
-  SAMPLE_DUMP_PROVIDER_PROTOCOL  Protocol = {
-    .Base.Revision        = OfflineDumpProviderProtocolRevision_1_0,
-    .Base.Begin           = SampleBegin,
-    .Base.ReportProgress  = SampleReportProgress,
-    .Base.End             = SampleEnd,
-    .pSections            = Sections,
-    .SectionCount         = SectionsCount,
-    .Architecture         = RAW_DUMP_ARCHITECTURE_ARM64,
-    .pCpuContexts         = CpuContexts,
-    .CpuContextCount      = ARRAY_SIZE (CpuContexts),
-    .CpuContextSize       = sizeof (CpuContexts[0]),
-    .pVendor              = "Vend",
-    .pPlatform            = "Platform",
-    .DumpReasonParameter1 = 0x12345678,
-    .DumpReasonParameter2 = 0xA,
-    .DumpReasonParameter3 = 0x1234,
-    .DumpReasonParameter4 = 0x0,
-    .Flags                = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
+  SAMPLE_DUMP_PROVIDER  SampleDumpProvider = {
+    // Provider public fields (used by the collector):
+    .Protocol.Revision       = OfflineDumpProviderProtocolRevision_1_0,
+    .Protocol.Begin          = SampleBegin,
+    .Protocol.ReportProgress = SampleReportProgress,
+    .Protocol.End            = SampleEnd,
+
+    // Provider private fields (used by the callbacks):
+    .DumpInfo.BlockDevice          = NULL,       // Filled in by SampleBegin.
+    .DumpInfo.pSections            = Sections,
+    .DumpInfo.SectionCount         = SectionsCount,
+    .DumpInfo.Architecture         = RAW_DUMP_ARCHITECTURE_ARM64,
+    .DumpInfo.pCpuContexts         = CpuContexts,
+    .DumpInfo.CpuContextCount      = CpuContextCount,
+    .DumpInfo.CpuContextSize       = sizeof (CpuContexts[0]),
+    .DumpInfo.pVendor              = "Vend",     // TODO: Use real vendor.
+    .DumpInfo.pPlatform            = "Platform", // TODO: Use real platform.
+    .DumpInfo.DumpReasonParameter1 = 0x12345678, // TODO: Use real dump bucket parameters.
+    .DumpInfo.DumpReasonParameter2 = 0xA,
+    .DumpInfo.DumpReasonParameter3 = 0x1234,
+    .DumpInfo.DumpReasonParameter4 = 0x0,
+    .DumpInfo.Flags                = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
   };
 
-  // TODO: Temporary/transitional.
-  //
-  // Currently, this is a normal function call.
+  // Collect the dump.
+
+  // Note: Currently, this is a normal function call.
   // In the future, this will be a call to a separate module as follows:
-  //
   // 1. Add the protocol to the EFI handle table.
   // 2. Run the "OfflineDumpCollect.efi" application.
   // 3. Unload the protocol from the EFI handle table.
-  Status = OfflineDumpCollect (&Protocol.Base);
+  Status = OfflineDumpCollect (&SampleDumpProvider.Protocol);
 
 Done:
 

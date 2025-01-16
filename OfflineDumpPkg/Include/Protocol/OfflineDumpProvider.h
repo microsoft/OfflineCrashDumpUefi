@@ -6,10 +6,12 @@
 
   - OFFLINE_DUMP_PROVIDER_PROTOCOL (struct)
   - OFFLINE_DUMP_PROVIDER_PROTOCOL_REVISION (enum)
-  - OFFLINE_DUMP_PROVIDER_DUMP_INFO (struct)
-  - OFFLINE_DUMP_PROVIDER_SECTION (struct)
+  - OFFLINE_DUMP_INFO (struct)
+  - OFFLINE_DUMP_SECTION (struct)
   - OFFLINE_DUMP_COLLECTOR_INFO (struct)
   - OFFLINE_DUMP_OPTIONS (struct)
+  - OFFLINE_DUMP_SECTION_TYPE (enum)
+  - OFFLINE_DUMP_SECTION_OPTIONS (struct)
 
   - OFFLINE_DUMP_PROVIDER_BEGIN (function pointer)
   - OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS (function pointer)
@@ -22,9 +24,8 @@
 #ifndef _included_Protocol_OfflineDumpProvider_h
 #define _included_Protocol_OfflineDumpProvider_h
 
-#include <Guid/OfflineDumpConfig.h>
-#include <Guid/OfflineDumpEncryption.h>
-#include <Guid/OfflineDumpHeaders.h>
+#include <Guid/OfflineDumpConfig.h>     // OFFLINE_DUMP_USE_CAPABILITY_FLAGS
+#include <Guid/OfflineDumpHeaders.h>    // FLAGS, ARCHITECTURE, SECTION_INFORMATION
 
 // {56B79CF2-9D1F-42FC-B45A-16BBBA5C623A}
 #define OFFLINE_DUMP_PROVIDER_PROTOCOL_GUID \
@@ -32,7 +33,7 @@
 
 /**
   Protocol implemented by platform ISV to provide dump information to the Offline
-  Crash Dump Collector and to configure collector behavior.
+  Crash Dump Collector (OfflineDumpCollect) and to configure collector behavior.
 
   - ISV implements this protocol and installs the protocol instance into the EFI handle table.
   - ISV launches OfflineDumpCollect.efi.
@@ -73,17 +74,62 @@ STATIC_ASSERT (
                );
 
 /**
+  Type of the section provided by the provider.
+
+  This enumeration type is used in the OFFLINE_DUMP_SECTION structure to indicate the
+  type of the section being specified. The collector uses this value to determine how
+  to process the section when generating a dump.
+
+  This is not always the same as the RAW_DUMP_SECTION_TYPE enumeration. At present,
+  OfflineDumpSectionTypeDdrRange maps closely to RAW_DUMP_SECTION_DDR_RANGE and
+  OfflineDumpSectionTypeSvSpecific maps closely to RAW_DUMP_SECTION_SV_SPECIFIC, but
+  future OFFLINE_DUMP_SECTION_TYPE values may not always have a direct mapping to
+  RAW_DUMP_SECTION_TYPE values.
+**/
+typedef enum {
+  //
+  // Invalid section type.
+  //
+  OfflineDumpSectionTypeNone = 0,
+
+  //
+  // DDR range section. This section describes a range of DDR memory. This maps closely to
+  // RAW_DUMP_SECTION_DDR_RANGE.
+  //
+  // Implies the following:
+  //
+  // - The data will generally be written to the dump as a RAW_DUMP_SECTION_DDR_RANGE section
+  //   unless it contains non-VTL0 memory, in which case it may be reacted or split into multiple
+  //   sections.
+  // - The DdrRange variant of the Information union should be used.
+  // - The section's name should start with "DDR".
+  //
+  OfflineDumpSectionTypeDdrRange,
+
+  //
+  // SV-specific section. This section vendor-defined data. This maps closely to
+  // RAW_DUMP_SECTION_SV_SPECIFIC.
+  //
+  // Implies the following:
+  //
+  // - The data will be written to the dump as a RAW_DUMP_SECTION_SV_SPECIFIC section.
+  // - The SVSpecific variant of the Information union should be used.
+  //
+  OfflineDumpSectionTypeSvSpecific,
+} OFFLINE_DUMP_SECTION_TYPE;
+
+/**
   Callback used for reading the section data, e.g. to access fenced memory regions.
-  Used in the OFFLINE_DUMP_PROVIDER_SECTION structure's DataCopyCallback field.
+  Used in the OFFLINE_DUMP_SECTION structure's DataCopyCallback field.
 
   @param[in]  pDataStart      The value of the opaque pDataStart parameter that was set in
-                              OFFLINE_DUMP_PROVIDER_SECTION.
+                              OFFLINE_DUMP_SECTION.
   @param[in]  Offset          Offset into the section. This will always be less than the DataSize
-                              parameter that was set in OFFLINE_DUMP_PROVIDER_SECTION.
+                              parameter that was set in OFFLINE_DUMP_SECTION.
                               This will always be a multiple of 16.
   @param[in]  Size            Number of bytes to read. Offset + Size will always be less than or
                               equal to the DataSize parameter that was set in
-                              OFFLINE_DUMP_PROVIDER_SECTION. Size will always be a
+                              OFFLINE_DUMP_SECTION. Size will always be a
                               multiple of 16 unless DataSize was not, in which case the final call
                               to this callback will have a Size that is not a multiple of 16 (to
                               read the last bytes).
@@ -149,7 +195,7 @@ typedef struct {
   // The protocol implementation (provider) uses this value to determine which features the
   // collector supports. For example, if a new section type is added in a future version of the
   // specification, the provider can use the revision value to determine whether
-  // the new section type will be recognized.
+  // the new section type will be recognized by the current version of the collector.
   //
   OFFLINE_DUMP_PROVIDER_PROTOCOL_REVISION    CollectorRevision;
 
@@ -160,9 +206,8 @@ typedef struct {
 } OFFLINE_DUMP_COLLECTOR_INFO;
 
 /**
-  Information provided by the protocol implementation (provider) to the collector to control collector
-  behavior. This information is provided in the Options field of
-  OFFLINE_DUMP_PROVIDER_DUMP_INFO.
+  Information provided by the protocol implementation (provider) to the collector to control
+  collector behavior. This information is provided in the Options field of OFFLINE_DUMP_INFO.
 **/
 typedef struct {
   //
@@ -197,7 +242,7 @@ typedef struct {
   // - Else if BufferCount < 2 then ActualBufferCount will be set to 2.
   // - Else ActualBufferCount will be set to BufferCount.
   //
-  UINT8    BufferCount;
+  UINT32    BufferCount : 8;
 
   //
   // If TRUE, the collector will use EFI_BLOCK_IO_PROTOCOL (synchronous I/O) even if the
@@ -209,29 +254,26 @@ typedef struct {
   // flag also affects how the collector manages buffers. Since the device does not support
   // async I/O, the collector will allocate one large buffer instead of several smaller buffers.
   //
-  BOOLEAN    DisableBlockIo2  : 1;
+  UINT32    DisableBlockIo2  : 1;
 
   //
   // For testing/debugging purposes.
-  // If TRUE, the collector will not set the DUMP_VALID flag when finalizing the dump.
+  // If TRUE, indicates that the collector should not set the DUMP_VALID flag
+  // when finalizing the dump.
   //
-  BOOLEAN    ForceDumpInvalid : 1;
+  UINT32    ForceDumpInvalid : 1;
 
   //
-  // For testing/debugging purposes - production builds MUST NOT set this flag.
-  // If TRUE, the collector should not encrypt the dump.
+  // For testing/debugging purposes. Production builds MUST NOT set this flag.
+  // If TRUE, the collector should ignore the UEFI variable configuration and always produce
+  // an unencrypted dump.
   //
-  BOOLEAN    ForceUnencrypted : 1;
-
-  //
-  // Reserved - must be set to 0.
-  //
-  BOOLEAN    Reserved1        : 5;
+  UINT32    ForceUnencrypted : 1;
 
   //
   // Reserved - must be set to 0.
   //
-  UINT16     Reserved2;
+  UINT32    Reserved1        : 21;
 } OFFLINE_DUMP_OPTIONS;
 
 STATIC_ASSERT (
@@ -240,22 +282,55 @@ STATIC_ASSERT (
                );
 
 /**
-  Information provided by the protocol implementation (provider) to the collector about a section to be included
-  in the dump. This information is provided in the pSections field of OFFLINE_DUMP_PROVIDER_DUMP_INFO.
-
-  Note that in some cases, a single OFFLINE_DUMP_PROVIDER_SECTION element may result in
-  multiple sections being written to the dump, or it may be ignored entirely. For example:
-
-  - A single DDR_RANGE section may result in multiple DDR sections being written to the dump, e.g. if
-    parts of the section contain secure-kernel data and need to be redacted.
-  - If the collector does not support a section type or does not support a requested action, it will ignore
-    the section and will not write it to the dump.
+  Information provided by the protocol implementation (provider) to the collector to control section
+  behavior. This information is provided in the Options field of
+  OFFLINE_DUMP_SECTION.
 **/
 typedef struct {
   //
-  // Section type, e.g. DDR_RANGE or SV_SPECIFIC.
+  // Normally FALSE. If TRUE, indicates that the collector should not set the DUMP_VALID flag
+  // for the section.
   //
-  RAW_DUMP_SECTION_TYPE            Type;
+  UINT32    ForceSectionInvalid : 1;
+
+  //
+  // Reserved - must be set to 0.
+  //
+  UINT32    Reserved1           : 31;
+
+  //
+  // Reserved - must be set to 0.
+  //
+  UINT32    Reserved2;
+} OFFLINE_DUMP_SECTION_OPTIONS;
+
+STATIC_ASSERT (
+               sizeof (OFFLINE_DUMP_SECTION_OPTIONS) == 8,
+               "OFFLINE_DUMP_SECTION_OPTIONS should be 8 bytes"
+               );
+
+/**
+  Information provided by the protocol implementation (provider) to the collector about a section to be included
+  in the dump. This information is provided in the pSections field of OFFLINE_DUMP_INFO.
+
+  Note that in some cases, a single OFFLINE_DUMP_SECTION element may result in
+  multiple sections being written to the dump, or it may be ignored entirely. For example:
+
+  - A single DdrRange section may result in multiple DDR sections being written to the dump, e.g. if
+    parts of the section contain secure-kernel data and need to be redacted.
+  - If the collector does not support the specified section, it will ignore the section and will not write
+    it to the dump.
+**/
+typedef struct {
+  //
+  // Configuration options for the section. Usually the default (0) values are ok.
+  //
+  OFFLINE_DUMP_SECTION_OPTIONS     Options;
+
+  //
+  // Section type, e.g. DdrRange or SvSpecific.
+  //
+  OFFLINE_DUMP_SECTION_TYPE        Type;
 
   //
   // Normally NONE. Should not include DUMP_VALID or INSUFFICIENT_STORAGE.
@@ -264,16 +339,17 @@ typedef struct {
 
   //
   // Section name. Ends at first '\0', or at 20 chars. Not guaranteed to be unique.
-  // If this is set to "" then the collector will provide a default name for the section.
-  // DDR_RANGE section names should start with "DDR".
+  // If this is set to NULL or "" then the collector will generate a default name like
+  // "DDR-004.bin" for the section.
   //
-  // TODO: guidance for section names.
+  // Section names should be unique and should be valid NTFS file names.
+  // DdrRange section names should start with "DDR".
   //
   CHAR8 const                     *pName;
 
   //
   // Additional information about the section. The format of this information depends on the
-  // section type. For example, if Type=DDR_RANGE, the Information.DdrRange field of the union
+  // section type. For example, if Type=DdrRange, the Information.DdrRange field of the union
   // must be filled-in.
   //
   RAW_DUMP_SECTION_INFORMATION    Information;
@@ -301,35 +377,14 @@ typedef struct {
   OFFLINE_DUMP_DATA_COPY    DataCopyCallback;
 
   //
-  // Normally FALSE. If TRUE, indicates that the collector should not set the DUMP_VALID flag
-  // for the section.
-  //
-  BOOLEAN                   ForceInvalid;
-
-  //
-  // Must be set to 0. (Potential future use: SectionAction)
-  //
-  UINT8                     Reserved1;
-
-  //
-  // Must be set to 0. (Potential future use: SectionActionData)
-  //
-  UINT16                    Reserved2;
-
-  //
-  // Must be set to 0.
-  //
-  UINT32                    Reserved3;
-
-  //
   // Must be set to NULL. (Potential future use: extended section configuration.)
   //
-  VOID const                *Reserved4;
-} OFFLINE_DUMP_PROVIDER_SECTION;
+  VOID const                *Reserved1;
+} OFFLINE_DUMP_SECTION;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_PROVIDER_SECTION) == 72,
-               "OFFLINE_DUMP_PROVIDER_SECTION should be 72 bytes"
+               sizeof (OFFLINE_DUMP_SECTION) == 72,
+               "OFFLINE_DUMP_SECTION should be 72 bytes"
                );
 
 /**
@@ -342,7 +397,7 @@ STATIC_ASSERT (
   to handle this is to use a copy of the structure. For example, the Begin function might have
   code like this:
 
-    OFFLINE_DUMP_PROVIDER_DUMP_INFO DumpInfoCopy = { 0 };
+    OFFLINE_DUMP_INFO DumpInfoCopy = { 0 };
     // ... Initialize DumpInfoCopy rather than writing to pDumpInfo ...
     CopyMem(pDumpInfo, &DumpInfoCopy, MIN(DumpInfoSize, sizeof(DumpInfoCopy)));
 */
@@ -368,25 +423,25 @@ typedef struct {
   EFI_HANDLE    BlockDevice;
 
   //
-  // Pointer to an OFFLINE_DUMP_PROVIDER_SECTION[SectionCount] array with the
-  // information for DDR_RANGE and SV_SPECIFIC sections to be included in the dump.
+  // Pointer to an OFFLINE_DUMP_SECTION[SectionCount] array with the
+  // information for DdrRange and SvSpecific sections to be included in the dump.
   //
   // This should not include CPU_CONTEXT, DUMP_REASON, or SYSTEM_INFORMATION sections.
   // The collector will automatically add these sections based on the information provided
   // below.
   //
-  OFFLINE_DUMP_PROVIDER_SECTION const    *pSections;
+  OFFLINE_DUMP_SECTION const    *pSections;
 
   //
   // Number of elements in the pSections array.
   //
-  UINT32                                 SectionCount;
+  UINT32                        SectionCount;
 
   //
   // Indicates the CPU architecture of the system. This is used in the generated
   // CPU_CONTEXT and SYSTEM_INFORMATION sections.
   //
-  RAW_DUMP_ARCHITECTURE                  Architecture;
+  RAW_DUMP_ARCHITECTURE         Architecture;
 
   //
   // Pointer to an array of CPU context structures, one for each core on the system. This
@@ -443,11 +498,10 @@ typedef struct {
   RAW_DUMP_HEADER_FLAGS    Flags;
 
   //
-  // Reserved. Must be set to NULL.
-  // Potential future use: Secure-Kernel redaction information.
+  // Reserved (padding to multiple of 8 bytes). Must be set to 0.
   //
-  VOID                     *Reserved;
-} OFFLINE_DUMP_PROVIDER_DUMP_INFO;
+  UINT32                   Reserved1;
+} OFFLINE_DUMP_INFO;
 
 /**
   Called by the collector when it is about to begin writing the dump. The provider
@@ -463,7 +517,7 @@ typedef struct {
   @param[in]   pCollectorInfo     A pointer to a buffer that contains Collector information
                                   (information that the collector provides to the protocol).
   @param[in]   DumpInfoSize       The size of the pDumpInfo buffer (i.e.
-                                  sizeof(OFFLINE_DUMP_PROVIDER_DUMP_INFO) when the collector was
+                                  sizeof(OFFLINE_DUMP_INFO) when the collector was
                                   compiled). The provider should not write more than
                                   this many bytes to the buffer.
   @param[out]  pDumpInfo          A pointer to a buffer that receives the dump information
@@ -481,7 +535,7 @@ typedef
                                       IN  UINTN CollectorInfoSize,
                                       IN  OFFLINE_DUMP_COLLECTOR_INFO const *pCollectorInfo,
                                       IN  UINTN DumpInfoSize,
-                                      OUT OFFLINE_DUMP_PROVIDER_DUMP_INFO *pDumpInfo
+                                      OUT OFFLINE_DUMP_INFO *pDumpInfo
                                       );
 
 /**
@@ -510,12 +564,16 @@ typedef
                                                 );
 
 /**
-  Called by the collector when it has finished writing the dump. The provider
-  uses this function to clean up any state needed for the dump
-  and to process the success/failure of the dump.
+  Called by the collector when it has finished writing the dump.
+  This will be called if and only if the Begin function returned EFI_SUCCESS.
+
+  The provider uses this function to clean up any actions performed by Begin.
+  It may also record the status of the dump.
 
   @param[in] pThis   A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
   @param[in] Status  EFI_SUCCESS if the dump was successfully written. An error code otherwise.
+                     Note that if OfflineDumpCollect calls End(Status), OfflineDumpCollect will
+                     always return the same Status.
 
 **/
 typedef

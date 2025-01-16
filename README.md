@@ -7,7 +7,7 @@
   In particular, use [OfflineDumpCollect](OfflineDumpPkg/Include/Library/OfflineDumpLib.h) to write
   dumps.
 
-- **[Application](OfflineDumpPkg/Application/OfflineDumpApp/)** -- sample shows how to generate an offline
+- **[Application](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
   crash dump using `OfflineDumpCollect`.
 
 ## EDK2 build environment (Windows)
@@ -28,7 +28,7 @@
   - Update `TARGET_ARCH` as appropriate for your default target, e.g. `X64`.
   - As appropriate, set `ACTIVE_PLATFORM` to the platform you want to have as your default.
     - If you usually want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
-    - If you usually want to build a standalone OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
+    - If you usually want to build a standalone OfflineDumpSampleApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
 
 ### EDK2 each-time setup (Windows)
 
@@ -53,7 +53,7 @@
   - Update `TARGET_ARCH` as appropriate for your default target, e.g. `X64` or `AARCH64`.
   - As appropriate, set `ACTIVE_PLATFORM` to the platform you want to have as your default.
     - If you usually want to work in the Emulator, leave it set to `EmulatorPkg/EmulatorPkg.dsc`.
-    - If you usually want to build a standalone OfflineDumpApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
+    - If you usually want to build a standalone OfflineDumpSampleApp.efi module, set it to `OfflineDumpPkg/OfflineDumpPkg.dsc`.
 
 ### EDK2 each-time setup (Linux)
 
@@ -72,7 +72,7 @@ these variables before running the sample app.
   - This sets OfflineMemoryDumpEncryptionPublicKey to the certificate from `sample_keys.cer`.
   - The private key corresponding to `sample_keys.cer` is provided in `sample_keys.pfx` (password `abc123`).
 
-The `OfflineDumpApp.efi` sample app will do the following:
+The `OfflineDumpSampleApp.efi` sample app will do the following:
 
 - Look for an appropriate target for the dump, e.g. GPT partition with Type = SVRawDump.
 - If a target is found, look for the necessary UEFI variables that control dump enablement and encryption.
@@ -88,7 +88,7 @@ Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sam
 - Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
     This allows you to treat `disk.dmg` directly as a `rawdump.bin` file without any kind of extraction step.
-- Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpApp/OfflineDumpApp.inf`
+- Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
 - Under `[Components]`, add: `OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
 
 You may then run `build -p EmulatorPkg/EmulatorPkg.dsc` to build the EmulatorPkg platform, resulting in
@@ -101,8 +101,8 @@ You can then run the resulting WinHost.exe to launch the emulator, and then in t
 
 - In the UEFI shell, change to the FS0 drive: `FS0:`
 - If needed, set up the UEFI variables by running `.\dumpvars.nsh`.
-- Run the sample application: `.\OfflineDumpApp.efi`
-- Note that some of the output goes to the debug console, not the shell console.
+- Run the sample application: `.\OfflineDumpSampleApp.efi`
+  - Note that diagnostic output goes to the debug console instead of the shell console.
 - Close the emulator.
 - The dump will be present in the disk image file, `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg`.
   - If encrypted, you can decrypt using the sample private key from `sample_keys.pfx` (password `abc123`).
@@ -117,9 +117,9 @@ At present, `OfflineDumpCollect` is a function, and you link with `OfflineDumpLi
 In the future, `OfflineDumpCollect` will probably be moved into a separate binary,
 the `OfflineDumpCollect.efi` application. Then to call it, you would:
 
-1. Add your `OFFLINE_DUMP_CONFIGURATION_PROTOCOL` instance to the EFI handle table.
+1. Add your `OFFLINE_DUMP_PROVIDER_PROTOCOL` instance to the EFI handle table.
 2. Run the `OfflineDumpCollect.efi` application.
-3. Remove your `OFFLINE_DUMP_CONFIGURATION_PROTOCOL` instance from the EFI handle table.
+3. Remove your `OFFLINE_DUMP_PROVIDER_PROTOCOL` instance from the EFI handle table.
 
 ## Contributing
 

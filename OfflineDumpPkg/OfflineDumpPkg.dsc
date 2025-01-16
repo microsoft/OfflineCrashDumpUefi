@@ -58,7 +58,7 @@
 
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
 
-  OfflineDumpPkg/Application/OfflineDumpApp.inf {
+  OfflineDumpPkg/Application/OfflineDumpSampleApp.inf {
     <PcdsFixedAtBuild>
       # For sample, allow use of RngDxe based on BaseRngLibTimerLib.
       gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE

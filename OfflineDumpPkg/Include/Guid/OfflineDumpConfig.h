@@ -6,7 +6,6 @@ Microsoft Offline Dump - Definitions for communication between firmware and OS.
 #define _included_Guid_OfflineDumpConfig_h
 
 #include <Uefi/UefiBaseType.h>
-#pragma pack(push,1)
 
 //
 // OFFLINE_DUMP_CONFIGURATION_TABLE used to pass information from the firmware to the OS.
@@ -34,13 +33,15 @@ typedef struct {
   UINT32                                      Version;
   UINT32                                      AbnormalResetOccurred;
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS    OfflineMemoryDumpCapable;
+  UINT32                                      Padding1;
   UINT64                                      ResetDataAddress;
   UINT32                                      ResetDataSize;
+  UINT32                                      Padding2;
 } OFFLINE_DUMP_CONFIGURATION_TABLE_V2;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_CONFIGURATION_TABLE_V2) == 24,
-               "OFFLINE_DUMP_CONFIGURATION_TABLE_V2 should be 24 bytes"
+               sizeof (OFFLINE_DUMP_CONFIGURATION_TABLE_V2) == 32,
+               "OFFLINE_DUMP_CONFIGURATION_TABLE_V2 should be 32 bytes"
                );
 
 typedef struct {
@@ -135,5 +136,4 @@ extern EFI_GUID  gOfflineDumpConfigurationTableGuid;
 extern EFI_GUID  gOfflineDumpVendorGuid;
 extern EFI_GUID  gOfflineDumpPartitionTypeGuid;
 
-#pragma pack(pop)
 #endif // _included_Guid_OfflineDumpConfig_h

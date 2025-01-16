@@ -5,8 +5,9 @@
 #include <Protocol/OfflineDumpProvider.h>
 #include <Guid/OfflineDumpCpuContext.h>
 #include <Library/BaseLib.h>
-#include <Library/DebugLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/DebugLib.h>
+#include <Library/PrintLib.h>
 
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
@@ -30,22 +31,20 @@ AsciiStrnCpy (
 // Returns NULL if the section is ok, else a string describing the reason it is skipped.
 static CHAR8 const *
 OfflineDumpSectionSkipReason (
-  IN OFFLINE_DUMP_PROVIDER_SECTION const  *pSection
+  IN OFFLINE_DUMP_SECTION const  *pSection
   )
 {
   switch (pSection->Type) {
-    case RAW_DUMP_SECTION_DDR_RANGE:
-    case RAW_DUMP_SECTION_SV_SPECIFIC:
+    case OfflineDumpSectionTypeDdrRange:
+    case OfflineDumpSectionTypeSvSpecific:
       break;
     default:
       return "unsupported Type";
   }
 
-  if ((pSection->Reserved1 != 0) ||
-
-      (pSection->Reserved2 != 0) ||
-      (pSection->Reserved3 != 0) ||
-      (pSection->Reserved4 != NULL))
+  if ((pSection->Options.Reserved1 != 0) ||
+      (pSection->Options.Reserved2 != 0) ||
+      (pSection->Reserved1 != NULL))
   {
     return "non-zero Reserved field";
   }
@@ -57,10 +56,27 @@ OfflineDumpSectionSkipReason (
   return NULL;
 }
 
+static CHAR8 const *
+MakeSectionName (
+  CHAR8 const  *pProvidedName,
+  CHAR8 const  *pDefaultPrefix,
+  UINT32       Index,
+  CHAR8        NameBuffer[],
+  UINTN        NameBufferSize
+  )
+{
+  if (pProvidedName && pProvidedName[0]) {
+    return pProvidedName;
+  } else {
+    AsciiSPrint (NameBuffer, NameBufferSize, "%a-%03u.bin", pDefaultPrefix, Index);
+    return NameBuffer;
+  }
+}
+
 static EFI_STATUS
 OfflineDumpWrite (
-  IN OFFLINE_DUMP_PROVIDER_PROTOCOL const   *pProvider,
-  IN OFFLINE_DUMP_PROVIDER_DUMP_INFO const  *pDumpInfo
+  IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider,
+  IN OFFLINE_DUMP_INFO const               *pDumpInfo
   )
 {
   EFI_STATUS                    Status;
@@ -73,7 +89,7 @@ OfflineDumpWrite (
   UINT64  ExpectedBytes     = 0; // Only for progress reporting. Doesn't include small sections.
 
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_PROVIDER_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
+    OFFLINE_DUMP_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
     if (NULL != OfflineDumpSectionSkipReason (pSection)) {
       continue;
     }
@@ -87,9 +103,9 @@ OfflineDumpWrite (
   // Open the dump writer.
   {
     OFFLINE_DUMP_WRITER_OPTIONS  Options = {
-      .DisableBlockIo2   = pDumpInfo->Options.DisableBlockIo2,
-      .ForceUnencrypted  = pDumpInfo->Options.ForceUnencrypted,
-      .BufferCount       = pDumpInfo->Options.BufferCount,
+      .DisableBlockIo2   = (BOOLEAN)pDumpInfo->Options.DisableBlockIo2,
+      .ForceUnencrypted  = (BOOLEAN)pDumpInfo->Options.ForceUnencrypted,
+      .BufferCount       = (UINT8)pDumpInfo->Options.BufferCount,
       .BufferMemoryLimit = pDumpInfo->Options.BufferMemoryLimit,
     };
     Status = OfflineDumpWriterOpen (
@@ -188,7 +204,7 @@ OfflineDumpWrite (
 
   UINT64  WrittenBytes = 0; // Only for progress reporting. Doesn't include small sections.
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_PROVIDER_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
+    OFFLINE_DUMP_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
     if (NULL != OfflineDumpSectionSkipReason (pSection)) {
       continue;
     }
@@ -206,20 +222,24 @@ OfflineDumpWrite (
       goto Done;
     }
 
-    UINT16       MajorVersion;
-    UINT16       MinorVersion;
-    CHAR8 const  *pName;
+    UINT16                 MajorVersion;
+    UINT16                 MinorVersion;
+    RAW_DUMP_SECTION_TYPE  Type;
+    CHAR8 const            *pName;
+    CHAR8                  NameBuffer[21];
     switch (pSection->Type) {
-      case RAW_DUMP_SECTION_DDR_RANGE:
+      case OfflineDumpSectionTypeDdrRange:
         MajorVersion = RAW_DUMP_DDR_RANGE_CURRENT_MAJOR_VERSION;
         MinorVersion = RAW_DUMP_DDR_RANGE_CURRENT_MINOR_VERSION;
-        pName        = pSection->pName && pSection->pName[0] ? pSection->pName : "DDR";
+        Type         = RAW_DUMP_SECTION_DDR_RANGE;
+        pName        = MakeSectionName (pSection->pName, "DDR", SectionIndex, NameBuffer, sizeof (NameBuffer));
         break;
 
-      case RAW_DUMP_SECTION_SV_SPECIFIC:
+      case OfflineDumpSectionTypeSvSpecific:
         MajorVersion = RAW_DUMP_SV_SPECIFIC_CURRENT_MAJOR_VERSION;
         MinorVersion = RAW_DUMP_SV_SPECIFIC_CURRENT_MINOR_VERSION;
-        pName        = pSection->pName && pSection->pName[0] ? pSection->pName : "SV";
+        Type         = RAW_DUMP_SECTION_SV_SPECIFIC;
+        pName        = MakeSectionName (pSection->pName, "SV", SectionIndex, NameBuffer, sizeof (NameBuffer));
         break;
 
       default:
@@ -228,7 +248,7 @@ OfflineDumpWrite (
         continue;
     }
 
-    RAW_DUMP_SECTION_HEADER_FLAGS const  Flags = pSection->ForceInvalid
+    RAW_DUMP_SECTION_HEADER_FLAGS const  Flags = pSection->Options.ForceSectionInvalid
       ? pSection->Flags
       : pSection->Flags | RAW_DUMP_SECTION_HEADER_DUMP_VALID;
     Status = OfflineDumpWriterWriteSection (
@@ -236,7 +256,7 @@ OfflineDumpWrite (
                                             Flags,
                                             MajorVersion,
                                             MinorVersion,
-                                            pSection->Type,
+                                            Type,
                                             &pSection->Information,
                                             pName,
                                             pSection->DataCopyCallback,
@@ -298,7 +318,7 @@ OfflineDumpCollect (
   OFFLINE_DUMP_USE_CAPABILITY_FLAGS  UseCapabilityFlags;
   (void)GetVariableOfflineMemoryDumpUseCapability (&UseCapabilityFlags);
 
-  OFFLINE_DUMP_PROVIDER_DUMP_INFO  DumpInfo = { 0 };
+  OFFLINE_DUMP_INFO  DumpInfo = { 0 };
 
   {
     OFFLINE_DUMP_COLLECTOR_INFO  CollectorInfo = { 0 };
@@ -347,13 +367,8 @@ OfflineDumpCollect (
     DEBUG_PRINT (DEBUG_WARN, "DumpInfo.Options.Reserved1 is non-zero\n");
   }
 
-  if (DumpInfo.Options.Reserved2 != 0) {
-    // Not fatal.
-    DEBUG_PRINT (DEBUG_WARN, "DumpInfo.Options.Reserved2 is non-zero\n");
-  }
-
-  if (DumpInfo.Reserved) {
-    DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Reserved is non-NULL\n");
+  if (DumpInfo.Reserved1) {
+    DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Reserved1 is non-zero\n");
     Status = EFI_UNSUPPORTED;
     goto Done;
   }
@@ -363,7 +378,7 @@ OfflineDumpCollect (
   }
 
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
-    OFFLINE_DUMP_PROVIDER_SECTION const * const  pSection = &DumpInfo.pSections[SectionIndex];
+    OFFLINE_DUMP_SECTION const * const  pSection = &DumpInfo.pSections[SectionIndex];
 
     CHAR8 const  *pSkipReason = OfflineDumpSectionSkipReason (pSection);
     if (pSkipReason != NULL) {
