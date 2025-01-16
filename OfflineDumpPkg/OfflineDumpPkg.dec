@@ -12,7 +12,7 @@
 [Includes.Common.Private]
 
   Private
-  Include\Library
+  Include/Library
 
 [LibraryClasses]
 
