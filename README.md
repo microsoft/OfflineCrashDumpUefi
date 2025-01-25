@@ -85,7 +85,7 @@ If using EmulatorPkg to test the application, you'll probably want to configure 
 Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sample application.
 
 - Under `[LibraryClasses]`, add: `OfflineDumpLib|OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
-- Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdDmpUsePartition|FALSE`
+- Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
     This allows you to treat `disk.dmg` directly as a `rawdump.bin` file without any kind of extraction step.
 - Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
@@ -94,7 +94,13 @@ Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sam
 You may then run `build -p EmulatorPkg/EmulatorPkg.dsc` to build the EmulatorPkg platform, resulting in
 platform files in a directory like `ROOT\workspace\Build\EmulatorX64\DEBUG_VS2022\X64`.
 
-You may want to copy the firmware setup variables to that directory, i.e. from repo root, run:
+You will need to create a `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg` file that will act as
+the partition to receive the dump file. Use any tool (e.g. hex editor or dd) to create a zero-filled
+file large enough to contain the dump (generally a little bit larger than the emulator's physical memory,
+e.g. 65MB if the emulator is configured for 64MB of memory), e.g.
+`dd if=/dev/zero of=disk.dmg bs=1M count=65`
+
+You may want to copy the firmware variables setup script to that directory, i.e. from repo root, run:
 `copy OfflineDumpPkg\dumpvars.nsh workspace\Build\EmulatorX64\DEBUG_VS2022\X64`
 
 You can then run the resulting WinHost.exe to launch the emulator, and then in the shell, run the app:
@@ -103,6 +109,8 @@ You can then run the resulting WinHost.exe to launch the emulator, and then in t
 - If needed, set up the UEFI variables by running `.\dumpvars.nsh`.
 - Run the sample application: `.\OfflineDumpSampleApp.efi`
   - Note that diagnostic output goes to the debug console instead of the shell console.
+  - If the output says `Dump disabled`, run the `dumpvars.nsh` script to set up the variables
+    and then try again.
 - Close the emulator.
 - The dump will be present in the disk image file, `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg`.
   - If encrypted, you can decrypt using the sample private key from `sample_keys.pfx` (password `abc123`).
