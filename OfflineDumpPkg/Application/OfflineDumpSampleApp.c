@@ -267,20 +267,23 @@ UefiMain (
     .Protocol.End            = SampleEnd,
 
     // Provider private fields (used by the callbacks):
-    .DumpInfo.BlockDevice          = NULL,       // Filled in by SampleBegin.
-    .DumpInfo.pSections            = Sections,
-    .DumpInfo.SectionCount         = SectionsCount,
-    .DumpInfo.Architecture         = RAW_DUMP_ARCHITECTURE_ARM64,
-    .DumpInfo.pCpuContexts         = CpuContexts,
-    .DumpInfo.CpuContextCount      = CpuContextCount,
-    .DumpInfo.CpuContextSize       = sizeof (CpuContexts[0]),
-    .DumpInfo.pVendor              = "Vend",     // TODO: Use real vendor.
-    .DumpInfo.pPlatform            = "Platform", // TODO: Use real platform.
-    .DumpInfo.DumpReasonParameter1 = 0x12345678, // TODO: Use real dump bucket parameters.
-    .DumpInfo.DumpReasonParameter2 = 0xA,
-    .DumpInfo.DumpReasonParameter3 = 0x1234,
-    .DumpInfo.DumpReasonParameter4 = 0x0,
-    .DumpInfo.Flags                = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
+    .DumpInfo.BlockDevice                        = NULL, // Filled in by SampleBegin.
+    .DumpInfo.pSections                          = Sections,
+    .DumpInfo.SectionCount                       = SectionsCount,
+    .DumpInfo.Architecture                       = RAW_DUMP_ARCHITECTURE_ARM64,
+    .DumpInfo.pCpuContexts                       = CpuContexts,
+    .DumpInfo.CpuContextCount                    = CpuContextCount,
+    .DumpInfo.CpuContextSize                     = sizeof (CpuContexts[0]),
+    .DumpInfo.pVendor                            = "Vend",     // TODO: Use real vendor.
+    .DumpInfo.pPlatform                          = "Platform", // TODO: Use real platform.
+    .DumpInfo.DumpReasonParameter1               = 0x12345678, // TODO: Use real dump bucket parameters.
+    .DumpInfo.DumpReasonParameter2               = 0xA,        // TODO: Use real dump bucket parameters.
+    .DumpInfo.DumpReasonParameter3               = 0x1234,     // TODO: Use real dump bucket parameters.
+    .DumpInfo.DumpReasonParameter4               = 0x0,        // TODO: Use real dump bucket parameters.
+    .DumpInfo.Flags                              = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
+    .DumpInfo.pSecureOfflineDumpConfiguration    = NULL,                                   // TODO: Use real secure dump configuration from SMC.
+    .DumpInfo.SecureOfflineDumpConfigurationSize = 0,                                      // TODO: Use real secure dump configuration size.
+    .DumpInfo.SecureKernelState                  = OfflineDumpSecureKernelStateNotStarted, // TODO: Use real secure kernel state.
   };
 
   // Collect the dump.

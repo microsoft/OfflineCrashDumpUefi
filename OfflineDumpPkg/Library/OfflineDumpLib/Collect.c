@@ -403,6 +403,34 @@ OfflineDumpCollect (
     goto Done;
   }
 
+  // Set up redaction.
+
+  switch (DumpInfo.SecureKernelState) {
+    case OfflineDumpSecureKernelStateNotStarted:
+
+      // Redaction not needed.
+      break;
+
+    case OfflineDumpSecureKernelStateStarted:
+
+      // Redaction needed. Configuration data required.
+      if ((DumpInfo.pSecureOfflineDumpConfiguration == NULL) || (DumpInfo.SecureOfflineDumpConfigurationSize == 0)) {
+        DEBUG_PRINT (DEBUG_ERROR, "Secure kernel started but SecureOfflineDumpConfiguration not present. Dump cannot be collected.\n");
+        Status = EFI_INVALID_PARAMETER;
+        goto Done;
+      }
+
+      DEBUG_PRINT (DEBUG_ERROR, "SecureOfflineDumpConfiguration parsing not yet implemented. Dump cannot be collected.\n");
+      Status = EFI_UNSUPPORTED;
+      goto Done;
+
+    default:
+
+      DEBUG_PRINT (DEBUG_ERROR, "Unrecognized DumpInfo.SecureKernelState value %u\n", DumpInfo.SecureKernelState);
+      Status = EFI_INVALID_PARAMETER;
+      goto Done;
+  }
+
   // Write the dump
 
   Status = OfflineDumpWrite (pProvider, &DumpInfo);
