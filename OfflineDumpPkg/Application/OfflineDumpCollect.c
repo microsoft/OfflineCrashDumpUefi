@@ -31,9 +31,10 @@ UefiMain (
     // Normal - RngDxe fails GetRngGuid but that's not a problem.
     DEBUG_PRINT (DEBUG_INFO, "GetRngGuid() status %r\n", Status);
   } else {
+    static GUID const EdkiiRngAlgorithmUnSafe = EDKII_RNG_ALGORITHM_UNSAFE;
     DEBUG_PRINT (DEBUG_INFO, "RngGuid=%g\n", &RngGuid);
-    if (CompareGuid (&RngGuid, &gEdkiiRngAlgorithmUnSafe)) {
-      DEBUG_PRINT (DEBUG_WARN, "RngGuid is gEdkiiRngAlgorithmUnSafe\n");
+    if (CompareGuid (&RngGuid, &EdkiiRngAlgorithmUnSafe)) {
+      DEBUG_PRINT (DEBUG_WARN, "RngGuid is EDKII_RNG_ALGORITHM_UNSAFE\n");
     }
   }
 
