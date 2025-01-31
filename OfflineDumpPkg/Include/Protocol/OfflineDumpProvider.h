@@ -8,7 +8,9 @@
   - OFFLINE_DUMP_PROVIDER_PROTOCOL_REVISION (enum)
   - OFFLINE_DUMP_INFO (struct)
   - OFFLINE_DUMP_SECTION (struct)
-  - OFFLINE_DUMP_COLLECTOR_INFO (struct)
+  - OFFLINE_DUMP_BEGIN_INFO (struct)
+  - OFFLINE_DUMP_PROGRESS_INFO (struct)
+  - OFFLINE_DUMP_END_INFO (struct)
   - OFFLINE_DUMP_OPTIONS (struct)
   - OFFLINE_DUMP_SECTION_TYPE (enum)
   - OFFLINE_DUMP_SECTION_OPTIONS (struct)
@@ -25,6 +27,7 @@
 #define _included_Protocol_OfflineDumpProvider_h
 
 #include <Guid/OfflineDumpConfig.h>     // OFFLINE_DUMP_USE_CAPABILITY_FLAGS
+#include <Guid/OfflineDumpEncryption.h> // OFFLINE_MEMORY_DUMP_ENCRYPTION_ALGORITHM
 #include <Guid/OfflineDumpHeaders.h>    // FLAGS, ARCHITECTURE, SECTION_INFORMATION
 
 // {56B79CF2-9D1F-42FC-B45A-16BBBA5C623A}
@@ -75,7 +78,7 @@ STATIC_ASSERT (
 
 /**
   Value indicating whether the section memory and CPU contexts may contain secure-kernel
-  data. Used in the SecureOfflineDumpConfiguration field of OFFLINE_DUMP_INFO.
+  data. Used in the SecureKernelState field of OFFLINE_DUMP_INFO.
 **/
 typedef enum {
   //
@@ -85,16 +88,16 @@ typedef enum {
   OfflineDumpSecureKernelStateUnspecified,
 
   //
-  // The section memory and CPU contexts do not contain any secure-kernel data.
+  // The memory sections and CPU contexts do not contain any secure-kernel data.
   //
-  // If this value us specified, the dump collector will ignore the
+  // If this value is specified, the dump collector will ignore the
   // SecureOfflineDumpConfiguration field and will not attempt to redact any
   // secure-kernel data from the dump.
   //
   OfflineDumpSecureKernelStateNotStarted,
 
   //
-  // The section memory and CPU contexts may contain secure-kernel data.
+  // The memory sections and CPU contexts may contain secure-kernel data.
   //
   // If this value is specified, the dump collector will use the
   // SecureOfflineDumpConfiguration field to determine how to redact secure-kernel
@@ -216,13 +219,13 @@ typedef
 
   If the collector and the provider are compiled against different revisions of the
   protocol, they may disagree on the size of this structure. The provider's Begin
-  function should only read the first CollectorInfoSize bytes of the pCollectorInfo buffer. One way
+  function should only read the first BeginInfoSize bytes of the pBeginInfo buffer. One way
   to handle this is to use a copy of the structure. For example, the Begin function might have
   code like this:
 
-    OFFLINE_DUMP_COLLECTOR_INFO CollectorInfoCopy = { 0 };
-    CopyMem(&CollectorInfoCopy, pCollectorInfo, MIN(sizeof(CollectorInfoCopy), CollectorInfoSize));
-    // ... Use CollectorInfoCopy rather than reading from pCollectorInfo ...
+    OFFLINE_DUMP_BEGIN_INFO BeginInfoCopy = { 0 };
+    CopyMem(&BeginInfoCopy, pBeginInfo, MIN(sizeof(BeginInfoCopy), BeginInfoSize));
+    // ... Use BeginInfoCopy rather than reading from pBeginInfo ...
 **/
 typedef struct {
   //
@@ -239,7 +242,73 @@ typedef struct {
   // The capability flags that are requested by the high-level operating system.
   //
   OFFLINE_DUMP_USE_CAPABILITY_FLAGS          UseCapabilityFlags;
-} OFFLINE_DUMP_COLLECTOR_INFO;
+} OFFLINE_DUMP_BEGIN_INFO;
+
+/**
+  Information about the collector passed to the provider's ReportProgress function.
+
+  The collector provides this information to the protocol implementation (provider) when calling the
+  ReportProgress function.
+
+  If the collector and the provider are compiled against different revisions of the
+  protocol, they may disagree on the size of this structure. The provider's ReportProgress
+  function should only read the first ProgressInfoSize bytes of the pProgressInfo buffer. One way
+  to handle this is to use a copy of the structure. For example, the Progress function might have
+  code like this:
+
+    OFFLINE_DUMP_PROGRESS_INFO ProgressInfoCopy = { 0 };
+    CopyMem(&ProgressInfoCopy, pProgressInfo, MIN(sizeof(ProgressInfoCopy), ProgressInfoSize));
+    // ... Use ProgressInfoCopy rather than reading from pProgressInfo ...
+**/
+typedef struct {
+  // The total number of bytes expected to be written.
+  UINT64    ExpectedBytes;
+
+  // The number of bytes written so far.
+  UINT64    WrittenBytes;
+} OFFLINE_DUMP_PROGRESS_INFO;
+
+/**
+  Information about the dump passed to the provider's End function.
+
+  The collector provides this information to the protocol implementation (provider) when calling the
+  End function.
+
+  If the collector and the provider are compiled against different revisions of the
+  protocol, they may disagree on the size of this structure. The provider's End
+  function should only read the first EndInfoSize bytes of the pEndInfo buffer. One way
+  to handle this is to use a copy of the structure. For example, the End function might have
+  code like this:
+
+    OFFLINE_DUMP_END_INFO EndInfoCopy = { 0 };
+    CopyMem(&EndInfoCopy, pEndInfo, MIN(sizeof(EndInfoCopy), EndInfoSize));
+    // ... Use EndInfoCopy rather than reading from pEndInfo ...
+**/
+typedef struct {
+  //
+  // EFI_SUCCESS if the dump was successfully written. An error code otherwise.
+  // Note that if OfflineDumpCollect calls End(Status), OfflineDumpCollect will
+  // always return the same Status.
+  //
+  EFI_STATUS            Status;
+
+  //
+  // The encryption algorithm that was used for full-dump encryption, or NONE if not encrypted.
+  //
+  ENC_DUMP_ALGORITHM    EncryptionAlgorithm;
+
+  //
+  // The amount of storage space available for the dump.
+  //
+  UINT64                SizeAvailable;
+
+  //
+  // The amount of storage space required for the dump.
+  //
+  // This may be greater than SizeAvailable, indicating that the dump was truncated.
+  //
+  UINT64                SizeRequired;
+} OFFLINE_DUMP_END_INFO;
 
 /**
   Information provided by the protocol implementation (provider) to the collector to control
@@ -505,38 +574,38 @@ typedef struct {
   //
   // The CONTEXT_ARM64 and CONTEXT_AMD64 structures are defined in <Guid/OfflineDumpCpuContext.h>.
   //
-  UINT32                              CpuContextSize;
+  UINT32                   CpuContextSize;
 
   //
   // 4-character vendor ACPI ID. This is used in the generated SYSTEM_INFORMATION section.
   //
-  CHAR8 const                         *pVendor;
+  CHAR8 const              *pVendor;
 
   //
   // 8-character silicon vendor platform ID. This is used in the generated SYSTEM_INFORMATION
   // section.
   //
-  CHAR8 const                         *pPlatform;
+  CHAR8 const              *pPlatform;
 
   //
   // Bucketization parameters for the dump. These are used in the generated DUMP_REASON
   // section.
   //
-  UINT32                              DumpReasonParameter1;
-  UINT32                              DumpReasonParameter2;
-  UINT32                              DumpReasonParameter3;
-  UINT32                              DumpReasonParameter4;
+  UINT32                   DumpReasonParameter1;
+  UINT32                   DumpReasonParameter2;
+  UINT32                   DumpReasonParameter3;
+  UINT32                   DumpReasonParameter4;
 
   //
   // Dump flags. Should not include DUMP_VALID, INSUFFICIENT_STORAGE, or
   // IS_HYPERV_DATA_PROTECTED.
   //
-  RAW_DUMP_HEADER_FLAGS               Flags;
+  RAW_DUMP_HEADER_FLAGS    Flags;
 
   //
   // Reserved (padding to multiple of 8 bytes). Must be set to 0.
   //
-  UINT32                              Reserved1;
+  UINT32                   Reserved1;
 
   //
   // Data provided by the OS via SMC to configure secure offline dump, or NULL if none.
@@ -549,13 +618,13 @@ typedef struct {
   // SecureOfflineDumpConfigurationSize fields to the pointer and size provided by the
   // HLOS via the Configuration SMC call.
   //
-  VOID const                          *pSecureOfflineDumpConfiguration;
+  VOID const    *pSecureOfflineDumpConfiguration;
 
   //
   // Size of the secure offline dump configuration data provided by the OS via SMC, or
   // 0 if none.
   //
-  UINT32                              SecureOfflineDumpConfigurationSize;
+  UINT32        SecureOfflineDumpConfigurationSize;
 
   //
   // Set to a value indicating whether the section memory and CPU contexts might contain
@@ -583,12 +652,12 @@ typedef struct {
   the collector.
 
   @param[in]   pThis              A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
-  @param[in]   CollectorInfoSize  The size of the pCollectorInfo buffer (i.e.
-                                  sizeof(OFFLINE_DUMP_COLLECTOR_INFO) when the collector was
+  @param[in]   BeginInfoSize      The size of the pBeginInfo buffer (i.e.
+                                  sizeof(OFFLINE_DUMP_BEGIN_INFO) when the collector was
                                   compiled). The provider should not read more than
                                   this many bytes from the buffer.
-  @param[in]   pCollectorInfo     A pointer to a buffer that contains Collector information
-                                  (information that the collector provides to the protocol).
+  @param[in]   pBeginInfo         A pointer to a buffer that contains information that the
+                                  collector provides to the protocol).
   @param[in]   DumpInfoSize       The size of the pDumpInfo buffer (i.e.
                                   sizeof(OFFLINE_DUMP_INFO) when the collector was
                                   compiled). The provider should not write more than
@@ -605,8 +674,8 @@ typedef
   EFI_STATUS
 (EFIAPI *OFFLINE_DUMP_PROVIDER_BEGIN)(
                                       IN  OFFLINE_DUMP_PROVIDER_PROTOCOL *pThis,
-                                      IN  UINTN CollectorInfoSize,
-                                      IN  OFFLINE_DUMP_COLLECTOR_INFO const *pCollectorInfo,
+                                      IN  UINTN BeginInfoSize,
+                                      IN  OFFLINE_DUMP_BEGIN_INFO const *pBeginInfo,
                                       IN  UINTN DumpInfoSize,
                                       OUT OFFLINE_DUMP_INFO *pDumpInfo
                                       );
@@ -619,21 +688,25 @@ typedef
   The provider uses this function to update UI to reflect dump progress.
   For example, the provider might update a progress bar or blink an LED.
 
-  @param[in]   pThis          A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
-  @param[in]   ExpectedBytes  The total number of bytes expected to be written.
-  @param[in]   WrittenBytes   The number of bytes written so far.
+  @param[in]   pThis            A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
+  @param[in]   ProgressInfoSize The size of the pProgressInfo buffer (i.e.
+                                sizeof(OFFLINE_DUMP_PROGRESS_INFO) when the collector was
+                                compiled). The provider should not read more than
+                                this many bytes from the buffer.
+  @param[in]   pProgressInfo    A pointer to a buffer that contains information that the
+                                collector provides to the protocol).
 
-  @returns                    EFI_SUCCESS if the collector should continue writing the dump.
-                              An error code if the collector should stop writing and return the
-                              specified error.
+  @returns                      EFI_SUCCESS if the collector should continue writing the dump.
+                                An error code if the collector should stop writing and return the
+                                specified error.
 
 **/
 typedef
   EFI_STATUS
 (EFIAPI *OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS)(
                                                 IN OFFLINE_DUMP_PROVIDER_PROTOCOL *pThis,
-                                                IN UINT64 ExpectedBytes,
-                                                IN UINT64 WrittenBytes
+                                                IN  UINTN ProgressInfoSize,
+                                                IN  OFFLINE_DUMP_PROGRESS_INFO const *pProgressInfo
                                                 );
 
 /**
@@ -643,17 +716,21 @@ typedef
   The provider uses this function to clean up any actions performed by Begin.
   It may also record the status of the dump.
 
-  @param[in] pThis   A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
-  @param[in] Status  EFI_SUCCESS if the dump was successfully written. An error code otherwise.
-                     Note that if OfflineDumpCollect calls End(Status), OfflineDumpCollect will
-                     always return the same Status.
+  @param[in] pThis         A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
+  @param[in]   EndInfoSize The size of the pEndInfo buffer (i.e.
+                           sizeof(OFFLINE_DUMP_END_INFO) when the collector was
+                           compiled). The provider should not read more than
+                           this many bytes from the buffer.
+  @param[in]   pEndInfo    A pointer to a buffer that contains information that the
+                           collector provides to the protocol).
 
 **/
 typedef
   VOID
 (EFIAPI *OFFLINE_DUMP_PROVIDER_END)(
                                     IN  OFFLINE_DUMP_PROVIDER_PROTOCOL *pThis,
-                                    IN  EFI_STATUS Status
+                                    IN  UINTN EndInfoSize,
+                                    IN  OFFLINE_DUMP_END_INFO const *pEndInfo
                                     );
 
 struct _OFFLINE_DUMP_PROVIDER_PROTOCOL {

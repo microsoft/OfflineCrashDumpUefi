@@ -17,6 +17,7 @@
 [LibraryClasses]
 
   OfflineDumpLib|Include/Library/OfflineDumpLib.h
+  OfflineDumpInternal|Include/Library/OfflineDumpInternal.h
 
 [Guids]
 

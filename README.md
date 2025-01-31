@@ -4,11 +4,16 @@
   offline crash dumps.
 
 - **[Libraries](OfflineDumpPkg/Include/Library/)** -- support code for writing offline crash dumps.
-  In particular, use [OfflineDumpCollect](OfflineDumpPkg/Include/Library/OfflineDumpLib.h) to write
-  dumps.
 
-- **[Application](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
-  crash dump using `OfflineDumpCollect`.
+  - Helper for locating the partition where the dump should be written.
+  - Helpers for executing the "OfflineDumpCollect.efi" application.
+  - Helpers for reading Windows-defined UEFI variables related to offline crash dumps.
+
+- **[Redistributable](OfflineDumpPkg/Application/OfflineDumpCollect.inf)** -- `OfflineDumpCollect.efi`
+  implements crash dump collection.
+
+- **[Sample](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
+  crash dump using `OfflineDumpCollect.efi`.
 
 ## EDK2 build environment (Windows)
 
@@ -120,14 +125,10 @@ these bugs have been fixed. You may encounter hangs or errors if using an old ve
 
 ## Future Directions
 
-At present, `OfflineDumpCollect` is a function, and you link with `OfflineDumpLib` to call it.
-
-In the future, `OfflineDumpCollect` will probably be moved into a separate binary,
-the `OfflineDumpCollect.efi` application. Then to call it, you would:
-
-1. Add your `OFFLINE_DUMP_PROVIDER_PROTOCOL` instance to the EFI handle table.
-2. Run the `OfflineDumpCollect.efi` application.
-3. Remove your `OFFLINE_DUMP_PROVIDER_PROTOCOL` instance from the EFI handle table.
+At present, `OfflineDumpCollect` is available as a function in the OfflineDumpInternal
+library. In the future, the OfflineDumpInternal library will no longer be available.
+Users should transition to using the `OfflineDumpCollect.efi` redistributable and
+invoking it using an `OfflineDumpCollectExecute` function.
 
 ## Contributing
 

@@ -1,41 +1,41 @@
-[Defines] 
+# Application that collects an offline dump.
+# Obtains dump parameters via LocateProtocol(gOfflineDumpProviderProtocolGuid).
+# Status is reported via DebugLib.
+# Requires RngDxe for secure random numbers.
+[Defines]
 
   INF_VERSION                    = 0x00010005
   UEFI_SPECIFICATION_VERSION     = 0x0002001E
-  BASE_NAME                      = OfflineDumpSampleApp
+  BASE_NAME                      = OfflineDumpCollect
   VERSION_STRING                 = 0.1
-  FILE_GUID                      = 813959c1-07bf-4a21-97eb-765f853acae1
+  FILE_GUID                      = 00f258e4-1a26-4f97-8d42-340a388a982f
   MODULE_TYPE                    = UEFI_APPLICATION
   ENTRY_POINT                    = UefiMain
 
 [Sources]
 
-  OfflineDumpSampleApp.c
+  OfflineDumpCollect.c
 
 [Packages]
 
   OfflineDumpPkg/OfflineDumpPkg.dec
 
+  CryptoPkg/CryptoPkg.dec
   MdePkg/MdePkg.dec
 
 [LibraryClasses]
 
   OfflineDumpLib
+  OfflineDumpInternal
 
   BaseMemoryLib
   DebugLib
-  DevicePathLib
   MemoryAllocationLib
   UefiBootServicesTableLib
   UefiLib
 
   UefiApplicationEntryPoint
 
-[Pcd]
-
-  gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition
-
 [Protocols]
 
-  gEfiLoadedImageDevicePathProtocolGuid ## CONSUMES
-  gOfflineDumpProviderProtocolGuid      ## PRODUCES
+  gOfflineDumpProviderProtocolGuid      ## CONSUMES
