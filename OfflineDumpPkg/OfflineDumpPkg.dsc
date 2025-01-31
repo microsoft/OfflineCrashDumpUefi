@@ -38,6 +38,7 @@
   MemoryAllocationLib         |MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
   PcdLib                      |MdePkg/Library/DxePcdLib/DxePcdLib.inf
   PrintLib                    |MdePkg/Library/BasePrintLib/BasePrintLib.inf
+  RngLib                      |MdePkg/Library/DxeRngLib/DxeRngLib.inf
   UefiLib                     |MdePkg/Library/UefiLib/UefiLib.inf
   UefiApplicationEntryPoint   |MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
   UefiBootServicesTableLib    |MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
@@ -58,26 +59,9 @@
 
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
   OfflineDumpPkg/Library/OfflineDumpInternal/OfflineDumpInternal.inf
-
   OfflineDumpPkg/Application/OfflineDumpSampleApp.inf
-
-  OfflineDumpPkg/Application/OfflineDumpCollect.inf {
-    <LibraryClasses>
-      # For release, use RngDxe to provide a secure source of random numbers.
-      RngLib|MdePkg/Library/DxeRngLib/DxeRngLib.inf
-  }
-
-  OfflineDumpPkg/Application/OfflineDumpCollectInsecure.inf {
-    <LibraryClasses>
-      # For development on boards without RngDxe, use timer-based RngLib (insecure).
-      RngLib|MdeModulePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
-  }
-
-  OfflineDumpPkg/Application/OfflineDumpBench.inf {
-    <LibraryClasses>
-      # For development on boards without RngDxe, use timer-based RngLib (insecure).
-      RngLib|MdeModulePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
-  }
+  OfflineDumpPkg/Application/OfflineDumpCollect.inf
+  OfflineDumpPkg/Application/OfflineDumpBench.inf
 
 [PcdsFixedAtBuild]
 
