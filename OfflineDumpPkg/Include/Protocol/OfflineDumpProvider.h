@@ -74,6 +74,42 @@ STATIC_ASSERT (
                );
 
 /**
+  Value indicating whether the section memory and CPU contexts may contain secure-kernel
+  data. Used in the SecureOfflineDumpConfiguration field of OFFLINE_DUMP_INFO.
+**/
+typedef enum {
+  //
+  // Invalid value. If specified, the dump collector will not write the dump and will
+  // return an error.
+  //
+  OfflineDumpSecureKernelStateUnspecified,
+
+  //
+  // The section memory and CPU contexts do not contain any secure-kernel data.
+  //
+  // If this value us specified, the dump collector will ignore the
+  // SecureOfflineDumpConfiguration field and will not attempt to redact any
+  // secure-kernel data from the dump.
+  //
+  OfflineDumpSecureKernelStateNotStarted,
+
+  //
+  // The section memory and CPU contexts may contain secure-kernel data.
+  //
+  // If this value is specified, the dump collector will use the
+  // SecureOfflineDumpConfiguration field to determine how to redact secure-kernel
+  // data from the dump. If the SecureOfflineDumpConfiguration field is not provided,
+  // the dump collector will not write the dump and will return an error.
+  //
+  OfflineDumpSecureKernelStateStarted,
+} OFFLINE_DUMP_SECURE_KERNEL_STATE;
+
+STATIC_ASSERT (
+               sizeof (OFFLINE_DUMP_SECURE_KERNEL_STATE) == 4,
+               "OFFLINE_DUMP_SECURE_KERNEL_STATE should be 4 bytes"
+               );
+
+/**
   Type of the section provided by the provider.
 
   This enumeration type is used in the OFFLINE_DUMP_SECTION structure to indicate the
@@ -469,38 +505,75 @@ typedef struct {
   //
   // The CONTEXT_ARM64 and CONTEXT_AMD64 structures are defined in <Guid/OfflineDumpCpuContext.h>.
   //
-  UINT32                   CpuContextSize;
+  UINT32                              CpuContextSize;
 
   //
   // 4-character vendor ACPI ID. This is used in the generated SYSTEM_INFORMATION section.
   //
-  CHAR8 const              *pVendor;
+  CHAR8 const                         *pVendor;
 
   //
   // 8-character silicon vendor platform ID. This is used in the generated SYSTEM_INFORMATION
   // section.
   //
-  CHAR8 const              *pPlatform;
+  CHAR8 const                         *pPlatform;
 
   //
   // Bucketization parameters for the dump. These are used in the generated DUMP_REASON
   // section.
   //
-  UINT32                   DumpReasonParameter1;
-  UINT32                   DumpReasonParameter2;
-  UINT32                   DumpReasonParameter3;
-  UINT32                   DumpReasonParameter4;
+  UINT32                              DumpReasonParameter1;
+  UINT32                              DumpReasonParameter2;
+  UINT32                              DumpReasonParameter3;
+  UINT32                              DumpReasonParameter4;
 
   //
   // Dump flags. Should not include DUMP_VALID, INSUFFICIENT_STORAGE, or
   // IS_HYPERV_DATA_PROTECTED.
   //
-  RAW_DUMP_HEADER_FLAGS    Flags;
+  RAW_DUMP_HEADER_FLAGS               Flags;
 
   //
   // Reserved (padding to multiple of 8 bytes). Must be set to 0.
   //
-  UINT32                   Reserved1;
+  UINT32                              Reserved1;
+
+  //
+  // Data provided by the OS via SMC to configure secure offline dump, or NULL if none.
+  //
+  // The firmware should provide a CSRT "Offline Dump Capabilities" table to the
+  // high-level OS (HLOS). The table includes a "Configuration SMC ID". If the HLOS
+  // requires offline dump redaction, it will invoke the Configuration SMC to provide
+  // secure offline dump configuration (pointer and size). If the OS invokes the
+  // Configuration SMC, the provider must set the pSecureOfflineDumpConfiguration and
+  // SecureOfflineDumpConfigurationSize fields to the pointer and size provided by the
+  // HLOS via the Configuration SMC call.
+  //
+  VOID const                          *pSecureOfflineDumpConfiguration;
+
+  //
+  // Size of the secure offline dump configuration data provided by the OS via SMC, or
+  // 0 if none.
+  //
+  UINT32                              SecureOfflineDumpConfigurationSize;
+
+  //
+  // Set to a value indicating whether the section memory and CPU contexts might contain
+  // secure-kernel data, i.e. set to OfflineDumpSecureKernelStateNotStarted if the OS never
+  // started the secure kernel, or set to OfflineDumpSecureKernelStateStarted if the OS
+  // started the secure kernel.
+  //
+  // The collector uses this value to determine how to redact secure-kernel CPU and memory.
+  //
+  // - If this value is set to NotStarted, the collector will ignore the
+  //   pSecureOfflineDumpConfiguration field and will not attempt to redact any
+  //   secure-kernel CPU or memory.
+  // - If this value is set to Started, the collector will use the
+  //   pSecureOfflineDumpConfiguration field to determine how to redact secure-kernel CPU
+  //   and memory. If the pSecureOfflineDumpConfiguration field is NULL or invalid, the
+  //   collector will not write the dump and will return an error.
+  //
+  OFFLINE_DUMP_SECURE_KERNEL_STATE    SecureKernelState;
 } OFFLINE_DUMP_INFO;
 
 /**
