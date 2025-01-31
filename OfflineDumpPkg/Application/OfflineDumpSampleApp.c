@@ -138,7 +138,11 @@ SampleEnd (
   CopyMem (&pThis->EndInfo, pEndInfo, MIN (EndInfoSize, sizeof (pThis->EndInfo)));
 
   pThis->DumpInfo.BlockDevice = NULL;          // Cleanup as needed.
-  Print (L"End: %r\n", pThis->EndInfo.Status); // OfflineDumpWrite will return the same status.
+  Print (
+         L"End: ENC=%u Status=%r\n",
+         (unsigned)pThis->EndInfo.EncryptionAlgorithm,
+         pThis->EndInfo.Status // OfflineDumpWrite will return the same status.
+         );
 }
 
 // Simple implementation of the ReportProgress callback for the OfflineDumpProviderProtocol.
