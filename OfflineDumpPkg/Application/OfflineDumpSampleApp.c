@@ -1,10 +1,11 @@
-#include <OfflineDumpLib.h>
+#include <Library/OfflineDumpLib.h>
 #include <Guid/OfflineDumpCpuContext.h> // CONTEXT_AMD64, CONTEXT_ARM64
 
 #include <Uefi.h>
 #include <Library/BaseMemoryLib.h>
-#include <Library/DebugLib.h>
+#include <Library/DebugLib.h> // ASSERT
 #include <Library/MemoryAllocationLib.h>
+#include <Library/TimerLib.h> // For benchmarking.
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 
@@ -57,7 +58,7 @@ typedef struct {
   // Additional fields needed by the protocol implementation can go here:
 
   OFFLINE_DUMP_INFO                 DumpInfo;  // Information that will be returned by Begin.
-  EFI_STATUS                        EndStatus; // Status that will be captured by End.
+  OFFLINE_DUMP_END_INFO             EndInfo;   // Information that was captured by End.
 } SAMPLE_DUMP_PROVIDER;
 
 // Simple implementation of the Begin callback for the OfflineDumpProviderProtocol.
@@ -65,22 +66,22 @@ typedef struct {
 // It needs to fill in the pDumpInfo information.
 static EFI_STATUS
 SampleBegin (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL     *pThisProtocol,
-  IN  UINTN                              CollectorInfoSize,
-  IN  OFFLINE_DUMP_COLLECTOR_INFO const  *pCollectorInfo,
-  IN  UINTN                              DumpInfoSize,
-  OUT OFFLINE_DUMP_INFO                  *pDumpInfo
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
+  IN  UINTN                           BeginInfoSize,
+  IN  OFFLINE_DUMP_BEGIN_INFO const   *pBeginInfo,
+  IN  UINTN                           DumpInfoSize,
+  OUT OFFLINE_DUMP_INFO               *pDumpInfo
   )
 {
   EFI_STATUS                   Status;
   SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
 
-  // CollectorInfo holds the information we copy from pCollectorInfo.
-  OFFLINE_DUMP_COLLECTOR_INFO  CollectorInfo = { 0 };
+  // BeginInfo holds the information we copy from pBeginInfo.
+  OFFLINE_DUMP_BEGIN_INFO  BeginInfo = { 0 };
 
-  // Copy the collector's CollectorInfo buffer to our local CollectorInfo.
+  // Copy the collector's BeginInfo buffer to our local BeginInfo.
   // In case of size mismatch between us and the collector, copy the smaller of the two.
-  CopyMem (&CollectorInfo, pCollectorInfo, MIN (CollectorInfoSize, sizeof (CollectorInfo)));
+  CopyMem (&BeginInfo, pBeginInfo, MIN (BeginInfoSize, sizeof (BeginInfo)));
 
   // Begin performs any work needed to prepare for the dump. In this case, most of the work
   // happened during protocol initialization.
@@ -88,8 +89,8 @@ SampleBegin (
   // We want to validate UseCapabilityFlags before searching for the BlockDevice,
   // so let's do that now.
 
-  if (0 == (CollectorInfo.UseCapabilityFlags & OFFLINE_DUMP_USE_CAPABILITY_LOCATION_GPT_SCAN)) {
-    Print (L"Dump disabled: OfflineMemoryDumpUseCapability = 0x%X.\n", CollectorInfo.UseCapabilityFlags);
+  if (0 == (BeginInfo.UseCapabilityFlags & OFFLINE_DUMP_USE_CAPABILITY_LOCATION_GPT_SCAN)) {
+    Print (L"Dump disabled: OfflineMemoryDumpUseCapability = 0x%X.\n", BeginInfo.UseCapabilityFlags);
     Status = EFI_NOT_STARTED;
     goto Done;
   }
@@ -124,13 +125,22 @@ Done:
 static VOID
 SampleEnd (
   IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
-  IN  EFI_STATUS                      Status
+  IN  UINTN                           EndInfoSize,
+  IN  OFFLINE_DUMP_END_INFO const     *pEndInfo
   )
 {
   SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
 
-  pThis->DumpInfo.BlockDevice = NULL; // Cleanup as needed.
-  Print (L"End: %r\n", Status);       // OfflineDumpWrite will return the same status.
+  // Copy the collector's EndInfo buffer to our local EndInfo.
+  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  CopyMem (&pThis->EndInfo, pEndInfo, MIN (EndInfoSize, sizeof (pThis->EndInfo)));
+
+  pThis->DumpInfo.BlockDevice = NULL;          // Cleanup as needed.
+  Print (
+         L"End: ENC=%u Status=%r\n",
+         (unsigned)pThis->EndInfo.EncryptionAlgorithm,
+         pThis->EndInfo.Status // OfflineDumpWrite will return the same status.
+         );
 }
 
 // Simple implementation of the ReportProgress callback for the OfflineDumpProviderProtocol.
@@ -138,16 +148,23 @@ SampleEnd (
 // This will only be called if the Begin callback returned successfully.
 static EFI_STATUS
 SampleReportProgress (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
-  IN  UINT64                          ExpectedBytes,
-  IN  UINT64                          WrittenBytes
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL    *pThisProtocol,
+  IN  UINTN                             ProgressInfoSize,
+  IN  OFFLINE_DUMP_PROGRESS_INFO const  *pProgressInfo
   )
 {
   (void)pThisProtocol; // Parameter not used.
 
+  // ProgressInfo holds the information we copy from pProgressInfo.
+  OFFLINE_DUMP_PROGRESS_INFO  ProgressInfo = { 0 };
+
+  // Copy the collector's ProgressInfo buffer to our local ProgressInfo.
+  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  CopyMem (&ProgressInfo, pProgressInfo, MIN (ProgressInfoSize, sizeof (ProgressInfo)));
+
   // This implementation just prints the progress.
   // A more complex implementation might update a progress bar or other UI.
-  Print (L"ReportProgress: %llu/%llu\n", (llu_t)WrittenBytes, (llu_t)ExpectedBytes);
+  Print (L"ReportProgress: %llu/%llu\n", (llu_t)ProgressInfo.WrittenBytes, (llu_t)ProgressInfo.ExpectedBytes);
   return EFI_SUCCESS; // If this returns an error, the collector will stop writing the dump.
 }
 
@@ -248,7 +265,8 @@ UefiMain (
   // Fill in the CPU context data for each core.
 
   #define CPU_CONTEXT_COUNT  4 // TODO: Get the actual number of CPU cores.
-  CONTEXT_ARM64  CpuContexts[CPU_CONTEXT_COUNT] = { 0 };
+  CONTEXT_ARM64  CpuContexts[CPU_CONTEXT_COUNT];
+  SetMem (CpuContexts, sizeof (CpuContexts), 0);
   UINT32 const   CpuContextCount                = CPU_CONTEXT_COUNT;
   for (unsigned i = 0; i < CpuContextCount; i += 1) {
     CONTEXT_ARM64  *pContext = &CpuContexts[i];
@@ -288,12 +306,33 @@ UefiMain (
 
   // Collect the dump.
 
-  // Note: Currently, this is a normal function call.
-  // In the future, this will be a call to a separate module as follows:
-  // 1. Add the protocol to the EFI handle table.
-  // 2. Run the "OfflineDumpCollect.efi" application.
-  // 3. Unload the protocol from the EFI handle table.
+  UINT64 const  TimeStart = GetPerformanceCounter ();
   Status = OfflineDumpCollect (&SampleDumpProvider.Protocol);
+  UINT64 const  TimeEnd = GetPerformanceCounter ();
+
+  // Report results.
+
+  if (EFI_ERROR (Status)) {
+    Print (
+           L"OfflineDumpCollect failed: %r\n",
+           Status
+           );
+  } else if (SampleDumpProvider.EndInfo.SizeRequired > SampleDumpProvider.EndInfo.SizeAvailable) {
+    Print (
+           L"OfflineDumpCollect truncated: %lluKB required, %lluKB available\n",
+           (llu_t)SampleDumpProvider.EndInfo.SizeRequired / 1024,
+           (llu_t)SampleDumpProvider.EndInfo.SizeAvailable / 1024
+           );
+  } else {
+    UINT64 const  TimeNS             = GetTimeInNanoSecond (TimeEnd - TimeStart);
+    UINT64 const  KilobytesPerSecond = SampleDumpProvider.EndInfo.SizeRequired * (1000000000 / 1024) / (TimeNS ? TimeNS : 1);
+    Print (
+           L"OfflineDumpCollect succeeded: %lluKB / %llus = %llu KB/s\n",
+           (llu_t)SampleDumpProvider.EndInfo.SizeRequired / 1024,
+           (llu_t)TimeNS / 1000000000,
+           (llu_t)KilobytesPerSecond
+           );
+  }
 
 Done:
 

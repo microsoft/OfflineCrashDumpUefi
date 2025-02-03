@@ -3,11 +3,13 @@
 - **[Data structures](OfflineDumpPkg/Include/Guid/)** - headers with GUIDs, enums, and structs used in
   offline crash dumps.
 
-- **[Libraries](OfflineDumpPkg/Include/Library/)** -- support code for writing offline crash dumps.
-  In particular, use [OfflineDumpCollect](OfflineDumpPkg/Include/Library/OfflineDumpLib.h) to write
-  dumps.
+- **[Libraries](OfflineDumpPkg/Include/Library/OfflineDumpLib.h)** -- support code for writing offline crash dumps.
 
-- **[Application](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
+  - Helpers for locating the partition where the dump should be written.
+  - Helpers for reading Windows-defined UEFI variables related to offline crash dumps.
+  - Helper for collecting a dump (function `OfflineDumpCollect`).
+
+- **[Sample](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
   crash dump using `OfflineDumpCollect`.
 
 ## EDK2 build environment (Windows)
@@ -85,11 +87,10 @@ If using EmulatorPkg to test the application, you'll probably want to configure 
 Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sample application.
 
 - Under `[LibraryClasses]`, add: `OfflineDumpLib|OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
-- Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|FALSE`
+- Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
+- Optional: Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
     This allows you to treat `disk.dmg` directly as a `rawdump.bin` file without any kind of extraction step.
-- Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
-- Under `[Components]`, add: `OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
 
 You may then run `build -p EmulatorPkg/EmulatorPkg.dsc` to build the EmulatorPkg platform, resulting in
 platform files in a directory like `ROOT\workspace\Build\EmulatorX64\DEBUG_VS2022\X64`.
@@ -97,8 +98,8 @@ platform files in a directory like `ROOT\workspace\Build\EmulatorX64\DEBUG_VS202
 You will need to create a `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg` file that will act as
 the partition to receive the dump file. Use any tool (e.g. hex editor or dd) to create a zero-filled
 file large enough to contain the dump (generally a little bit larger than the emulator's physical memory,
-e.g. 65MB if the emulator is configured for 64MB of memory), e.g.
-`dd if=/dev/zero of=disk.dmg bs=1M count=65`
+e.g. 129MB if the emulator is configured for 129MB of memory), e.g.
+`dd if=/dev/zero of=disk.dmg bs=1M count=129`
 
 You may want to copy the firmware variables setup script to that directory, i.e. from repo root, run:
 `copy OfflineDumpPkg\dumpvars.nsh workspace\Build\EmulatorX64\DEBUG_VS2022\X64`
@@ -112,7 +113,7 @@ You can then run the resulting WinHost.exe to launch the emulator, and then in t
   - If the output says `Dump disabled`, run the `dumpvars.nsh` script to set up the variables
     and then try again.
 - Close the emulator.
-- The dump will be present in the disk image file, `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg`.
+- The dump will be present in the disk image file, e.g. `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg`.
   - If encrypted, you can decrypt using the sample private key from `sample_keys.pfx` (password `abc123`).
 
 Note that there have been several recent bug fixes in EmulatorPkg. The OfflineDump code assumes that

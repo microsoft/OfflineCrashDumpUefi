@@ -73,20 +73,20 @@ MakeSectionName (
   }
 }
 
-static EFI_STATUS
+static OFFLINE_DUMP_END_INFO
 OfflineDumpWrite (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider,
   IN OFFLINE_DUMP_INFO const               *pDumpInfo
   )
 {
-  EFI_STATUS                    Status;
+  OFFLINE_DUMP_END_INFO         EndInfo      = { 0 };
   OFFLINE_DUMP_WRITER           *pDumpWriter = NULL;
   RAW_DUMP_SECTION_INFORMATION  Information;
 
   // Count the sections and bytes to write.
 
-  UINT32  FinalSectionCount = 0;
-  UINT64  ExpectedBytes     = 0; // Only for progress reporting. Doesn't include small sections.
+  UINT32                      FinalSectionCount = 0;
+  OFFLINE_DUMP_PROGRESS_INFO  ProgressInfo      = { 0 }; // Only for progress reporting. Doesn't include small sections.
 
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
     OFFLINE_DUMP_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
@@ -94,8 +94,8 @@ OfflineDumpWrite (
       continue;
     }
 
-    FinalSectionCount += 1;
-    ExpectedBytes     += pSection->DataSize;
+    FinalSectionCount          += 1;
+    ProgressInfo.ExpectedBytes += pSection->DataSize;
   }
 
   FinalSectionCount += 3; // Account for SYSTEM_INFORMATION, DUMP_REASON, CPU_CONTEXT.
@@ -108,18 +108,21 @@ OfflineDumpWrite (
       .BufferCount       = (UINT8)pDumpInfo->Options.BufferCount,
       .BufferMemoryLimit = pDumpInfo->Options.BufferMemoryLimit,
     };
-    Status = OfflineDumpWriterOpen (
-                                    pDumpInfo->BlockDevice,
-                                    pDumpInfo->Flags,
-                                    FinalSectionCount,
-                                    &Options,
-                                    &pDumpWriter
-                                    );
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "OfflineDumpWriterOpen failed (%r)\n", Status);
-      return Status;
+    EndInfo.Status = OfflineDumpWriterOpen (
+                                            pDumpInfo->BlockDevice,
+                                            pDumpInfo->Flags,
+                                            FinalSectionCount,
+                                            &Options,
+                                            &pDumpWriter
+                                            );
+    if (EFI_ERROR (EndInfo.Status)) {
+      DEBUG_PRINT (DEBUG_ERROR, "OfflineDumpWriterOpen failed (%r)\n", EndInfo.Status);
+      return EndInfo;
     }
   }
+
+  EndInfo.EncryptionAlgorithm = OfflineDumpWriterEncryptionAlgorithm (pDumpWriter);
+  EndInfo.SizeAvailable       = OfflineDumpWriterMediaSize (pDumpWriter);
 
   // SYSTEM_INFORMATION
 
@@ -128,20 +131,20 @@ OfflineDumpWrite (
   AsciiStrnCpy (Information.SystemInformation.Platform, pDumpInfo->pPlatform, sizeof (Information.SystemInformation.Platform));
   Information.SystemInformation.Architecture = pDumpInfo->Architecture;
 
-  Status = OfflineDumpWriterWriteSection (
-                                          pDumpWriter,
-                                          RAW_DUMP_SECTION_HEADER_DUMP_VALID,
-                                          RAW_DUMP_SYSTEM_INFORMATION_CURRENT_MAJOR_VERSION,
-                                          RAW_DUMP_SYSTEM_INFORMATION_CURRENT_MINOR_VERSION,
-                                          RAW_DUMP_SECTION_SYSTEM_INFORMATION,
-                                          &Information,
-                                          "SystemInformation",
-                                          NULL, // Use CopyMem instead of a callback.
-                                          NULL, // No data content for this section.
-                                          0     // Size of the data in the section.
-                                          );
-  if (EFI_ERROR (Status)) {
-    DEBUG_PRINT (DEBUG_WARN, "WriteSection(SystemInformation) failed (%r)\n", Status);
+  EndInfo.Status = OfflineDumpWriterWriteSection (
+                                                  pDumpWriter,
+                                                  RAW_DUMP_SECTION_HEADER_DUMP_VALID,
+                                                  RAW_DUMP_SYSTEM_INFORMATION_CURRENT_MAJOR_VERSION,
+                                                  RAW_DUMP_SYSTEM_INFORMATION_CURRENT_MINOR_VERSION,
+                                                  RAW_DUMP_SECTION_SYSTEM_INFORMATION,
+                                                  &Information,
+                                                  "SystemInformation",
+                                                  NULL, // Use CopyMem instead of a callback.
+                                                  NULL, // No data content for this section.
+                                                  0     // Size of the data in the section.
+                                                  );
+  if (EFI_ERROR (EndInfo.Status)) {
+    DEBUG_PRINT (DEBUG_WARN, "WriteSection(SystemInformation) failed (%r)\n", EndInfo.Status);
   }
 
   // DUMP_REASON
@@ -152,20 +155,20 @@ OfflineDumpWrite (
   Information.DumpReason.Parameter3 = pDumpInfo->DumpReasonParameter3;
   Information.DumpReason.Parameter4 = pDumpInfo->DumpReasonParameter4;
 
-  Status = OfflineDumpWriterWriteSection (
-                                          pDumpWriter,
-                                          RAW_DUMP_SECTION_HEADER_DUMP_VALID,
-                                          RAW_DUMP_DUMP_REASON_CURRENT_MAJOR_VERSION,
-                                          RAW_DUMP_DUMP_REASON_CURRENT_MINOR_VERSION,
-                                          RAW_DUMP_SECTION_DUMP_REASON,
-                                          &Information,
-                                          "DumpReason",
-                                          NULL, // Use CopyMem instead of a callback.
-                                          NULL, // No data content for this section.
-                                          0     // Size of the data in the section.
-                                          );
-  if (EFI_ERROR (Status)) {
-    DEBUG_PRINT (DEBUG_WARN, "WriteSection(DumpReason) failed (%r)\n", Status);
+  EndInfo.Status = OfflineDumpWriterWriteSection (
+                                                  pDumpWriter,
+                                                  RAW_DUMP_SECTION_HEADER_DUMP_VALID,
+                                                  RAW_DUMP_DUMP_REASON_CURRENT_MAJOR_VERSION,
+                                                  RAW_DUMP_DUMP_REASON_CURRENT_MINOR_VERSION,
+                                                  RAW_DUMP_SECTION_DUMP_REASON,
+                                                  &Information,
+                                                  "DumpReason",
+                                                  NULL, // Use CopyMem instead of a callback.
+                                                  NULL, // No data content for this section.
+                                                  0     // Size of the data in the section.
+                                                  );
+  if (EFI_ERROR (EndInfo.Status)) {
+    DEBUG_PRINT (DEBUG_WARN, "WriteSection(DumpReason) failed (%r)\n", EndInfo.Status);
   }
 
   // CPU_CONTEXT
@@ -184,25 +187,24 @@ OfflineDumpWrite (
   Information.CpuContext.CoreCount   = pDumpInfo->CpuContextCount;
   Information.CpuContext.ContextSize = pDumpInfo->CpuContextSize;
 
-  Status = OfflineDumpWriterWriteSection (
-                                          pDumpWriter,
-                                          RAW_DUMP_SECTION_HEADER_DUMP_VALID,
-                                          RAW_DUMP_CPU_CONTEXT_CURRENT_MAJOR_VERSION,
-                                          RAW_DUMP_CPU_CONTEXT_CURRENT_MINOR_VERSION,
-                                          RAW_DUMP_SECTION_CPU_CONTEXT,
-                                          &Information,
-                                          "CpuContext",
-                                          NULL, // Use CopyMem instead of a callback.
-                                          pDumpInfo->pCpuContexts,
-                                          pDumpInfo->CpuContextCount * (UINT64)pDumpInfo->CpuContextSize
-                                          );
-  if (EFI_ERROR (Status)) {
-    DEBUG_PRINT (DEBUG_WARN, "WriteSection(CpuContext) failed (%r)\n", Status);
+  EndInfo.Status = OfflineDumpWriterWriteSection (
+                                                  pDumpWriter,
+                                                  RAW_DUMP_SECTION_HEADER_DUMP_VALID,
+                                                  RAW_DUMP_CPU_CONTEXT_CURRENT_MAJOR_VERSION,
+                                                  RAW_DUMP_CPU_CONTEXT_CURRENT_MINOR_VERSION,
+                                                  RAW_DUMP_SECTION_CPU_CONTEXT,
+                                                  &Information,
+                                                  "CpuContext",
+                                                  NULL, // Use CopyMem instead of a callback.
+                                                  pDumpInfo->pCpuContexts,
+                                                  pDumpInfo->CpuContextCount * (UINT64)pDumpInfo->CpuContextSize
+                                                  );
+  if (EFI_ERROR (EndInfo.Status)) {
+    DEBUG_PRINT (DEBUG_WARN, "WriteSection(CpuContext) failed (%r)\n", EndInfo.Status);
   }
 
   // Other sections
 
-  UINT64  WrittenBytes = 0; // Only for progress reporting. Doesn't include small sections.
   for (UINT32 SectionIndex = 0; SectionIndex < pDumpInfo->SectionCount; SectionIndex += 1) {
     OFFLINE_DUMP_SECTION const * const  pSection = &pDumpInfo->pSections[SectionIndex];
     if (NULL != OfflineDumpSectionSkipReason (pSection)) {
@@ -211,14 +213,14 @@ OfflineDumpWrite (
 
     // TODO: Move this into OfflineDumpWriterWriteSection so that it can be called every N bytes,
     // even when the section is large.
-    Status = pProvider->ReportProgress (
-                                        (OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider,
-                                        ExpectedBytes,
-                                        WrittenBytes
-                                        );
-    WrittenBytes += pSection->DataSize;
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_WARN, "ReportProgress returned error (%r), stopping collection\n", Status);
+    EndInfo.Status = pProvider->ReportProgress (
+                                                (OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider,
+                                                sizeof (ProgressInfo),
+                                                &ProgressInfo
+                                                );
+    ProgressInfo.WrittenBytes += pSection->DataSize;
+    if (EFI_ERROR (EndInfo.Status)) {
+      DEBUG_PRINT (DEBUG_WARN, "ReportProgress returned error (%r), stopping collection\n", EndInfo.Status);
       goto Done;
     }
 
@@ -251,39 +253,40 @@ OfflineDumpWrite (
     RAW_DUMP_SECTION_HEADER_FLAGS const  Flags = pSection->Options.ForceSectionInvalid
       ? pSection->Flags
       : pSection->Flags | RAW_DUMP_SECTION_HEADER_DUMP_VALID;
-    Status = OfflineDumpWriterWriteSection (
-                                            pDumpWriter,
-                                            Flags,
-                                            MajorVersion,
-                                            MinorVersion,
-                                            Type,
-                                            &pSection->Information,
-                                            pName,
-                                            pSection->DataCopyCallback,
-                                            pSection->pDataStart,
-                                            pSection->DataSize
-                                            );
-    if (EFI_ERROR (Status)) {
+    EndInfo.Status = OfflineDumpWriterWriteSection (
+                                                    pDumpWriter,
+                                                    Flags,
+                                                    MajorVersion,
+                                                    MinorVersion,
+                                                    Type,
+                                                    &pSection->Information,
+                                                    pName,
+                                                    pSection->DataCopyCallback,
+                                                    pSection->pDataStart,
+                                                    pSection->DataSize
+                                                    );
+    if (EFI_ERROR (EndInfo.Status)) {
       DEBUG_PRINT (
                    DEBUG_WARN,
                    "WriteSection(\"%a\" %u) failed (%r)\n",
                    pName,
                    SectionIndex,
-                   Status
+                   EndInfo.Status
                    );
     }
   }
 
-  Status = OfflineDumpWriterLastWriteError (pDumpWriter);
+  EndInfo.Status       = OfflineDumpWriterLastWriteError (pDumpWriter);
+  EndInfo.SizeRequired = OfflineDumpWriterMediaPosition (pDumpWriter);
 
 Done:
 
-  EFI_STATUS const  CloseStatus = OfflineDumpWriterClose (pDumpWriter, !EFI_ERROR (Status));
-  if (!EFI_ERROR (Status)) {
-    Status = CloseStatus;
+  EFI_STATUS const  CloseStatus = OfflineDumpWriterClose (pDumpWriter, !EFI_ERROR (EndInfo.Status));
+  if (!EFI_ERROR (EndInfo.Status)) {
+    EndInfo.Status = CloseStatus;
   }
 
-  return Status;
+  return EndInfo;
 }
 
 EFI_STATUS
@@ -291,7 +294,7 @@ OfflineDumpCollect (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider
   )
 {
-  EFI_STATUS  Status;
+  OFFLINE_DUMP_END_INFO  EndInfo = { 0 };
 
   // Validate pProvider
 
@@ -321,20 +324,20 @@ OfflineDumpCollect (
   OFFLINE_DUMP_INFO  DumpInfo = { 0 };
 
   {
-    OFFLINE_DUMP_COLLECTOR_INFO  CollectorInfo = { 0 };
-    CollectorInfo.CollectorRevision  = OfflineDumpProviderProtocolRevisionCurrent;
-    CollectorInfo.UseCapabilityFlags = UseCapabilityFlags;
+    OFFLINE_DUMP_BEGIN_INFO  BeginInfo = { 0 };
+    BeginInfo.CollectorRevision  = OfflineDumpProviderProtocolRevisionCurrent;
+    BeginInfo.UseCapabilityFlags = UseCapabilityFlags;
 
-    Status = pProvider->Begin (
-                               (OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider,
-                               sizeof (CollectorInfo),
-                               &CollectorInfo,
-                               sizeof (DumpInfo),
-                               &DumpInfo
-                               );
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "protocol.Begin failed (%r)\n", Status);
-      return Status;
+    EndInfo.Status = pProvider->Begin (
+                                       (OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider,
+                                       sizeof (BeginInfo),
+                                       &BeginInfo,
+                                       sizeof (DumpInfo),
+                                       &DumpInfo
+                                       );
+    if (EFI_ERROR (EndInfo.Status)) {
+      DEBUG_PRINT (DEBUG_ERROR, "protocol.Begin failed (%r)\n", EndInfo.Status);
+      return EndInfo.Status;
     }
   }
 
@@ -342,14 +345,14 @@ OfflineDumpCollect (
 
   if (DumpInfo.SectionCount > 0x80000000) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.SectionCount %u is too large\n", DumpInfo.SectionCount);
-    Status = EFI_UNSUPPORTED;
+    EndInfo.Status = EFI_UNSUPPORTED;
     goto Done;
   }
 
   switch (DumpInfo.Architecture) {
     default:
       DEBUG_PRINT (DEBUG_ERROR, "Unsupported DumpInfo.Architecture %u\n", DumpInfo.Architecture);
-      Status = EFI_UNSUPPORTED;
+      EndInfo.Status = EFI_UNSUPPORTED;
       goto Done;
     case RAW_DUMP_ARCHITECTURE_ARM64:
     case RAW_DUMP_ARCHITECTURE_X64:
@@ -358,7 +361,7 @@ OfflineDumpCollect (
 
   if (DumpInfo.Flags & (RAW_DUMP_HEADER_DUMP_VALID | RAW_DUMP_HEADER_INSUFFICIENT_STORAGE | RAW_DUMP_HEADER_IS_HYPERV_DATA_PROTECTED)) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Flags 0x%X contains a prohibited flag\n", DumpInfo.Flags);
-    Status = EFI_UNSUPPORTED;
+    EndInfo.Status = EFI_UNSUPPORTED;
     goto Done;
   }
 
@@ -369,12 +372,16 @@ OfflineDumpCollect (
 
   if (DumpInfo.Reserved1) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Reserved1 is non-zero\n");
-    Status = EFI_UNSUPPORTED;
+    EndInfo.Status = EFI_UNSUPPORTED;
     goto Done;
   }
 
   if (DumpInfo.Options.ForceUnencrypted) {
     DEBUG_PRINT (DEBUG_WARN, "Forcing unencrypted dump\n");
+  }
+
+  if (DumpInfo.Options.ForceUnredacted) {
+    DEBUG_PRINT (DEBUG_WARN, "Forcing unredacted dump\n");
   }
 
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
@@ -392,14 +399,14 @@ OfflineDumpCollect (
     // Use the device specified by the protocol.
   } else if (UseCapabilityFlags & OFFLINE_DUMP_USE_CAPABILITY_LOCATION_GPT_SCAN) {
     // Find the device via GPT scan.
-    Status = FindOfflineDumpPartitionHandle (&DumpInfo.BlockDevice);
-    if (EFI_ERROR (Status)) {
-      DEBUG_PRINT (DEBUG_ERROR, "FindOfflineDumpPartitionHandle failed (%r)\n", Status);
+    EndInfo.Status = FindOfflineDumpPartitionHandle (&DumpInfo.BlockDevice);
+    if (EFI_ERROR (EndInfo.Status)) {
+      DEBUG_PRINT (DEBUG_ERROR, "FindOfflineDumpPartitionHandle failed (%r)\n", EndInfo.Status);
       goto Done;
     }
   } else {
     DEBUG_PRINT (DEBUG_ERROR, "Dump disabled: OfflineMemoryDumpUseCapability = 0x%X\n", UseCapabilityFlags);
-    Status = EFI_NOT_STARTED;
+    EndInfo.Status = EFI_NOT_STARTED;
     goto Done;
   }
 
@@ -413,30 +420,35 @@ OfflineDumpCollect (
 
     case OfflineDumpSecureKernelStateStarted:
 
+      if (DumpInfo.Options.ForceUnredacted) {
+        // Redaction not needed.
+        break;
+      }
+
       // Redaction needed. Configuration data required.
       if ((DumpInfo.pSecureOfflineDumpConfiguration == NULL) || (DumpInfo.SecureOfflineDumpConfigurationSize == 0)) {
         DEBUG_PRINT (DEBUG_ERROR, "Secure kernel started but SecureOfflineDumpConfiguration not present. Dump cannot be collected.\n");
-        Status = EFI_INVALID_PARAMETER;
+        EndInfo.Status = EFI_INVALID_PARAMETER;
         goto Done;
       }
 
       DEBUG_PRINT (DEBUG_ERROR, "SecureOfflineDumpConfiguration parsing not yet implemented. Dump cannot be collected.\n");
-      Status = EFI_UNSUPPORTED;
+      EndInfo.Status = EFI_UNSUPPORTED;
       goto Done;
 
     default:
 
       DEBUG_PRINT (DEBUG_ERROR, "Unrecognized DumpInfo.SecureKernelState value %u\n", DumpInfo.SecureKernelState);
-      Status = EFI_INVALID_PARAMETER;
+      EndInfo.Status = EFI_INVALID_PARAMETER;
       goto Done;
   }
 
   // Write the dump
 
-  Status = OfflineDumpWrite (pProvider, &DumpInfo);
+  EndInfo = OfflineDumpWrite (pProvider, &DumpInfo);
 
 Done:
 
-  pProvider->End ((OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider, Status);
-  return Status;
+  pProvider->End ((OFFLINE_DUMP_PROVIDER_PROTOCOL *)pProvider, sizeof (EndInfo), &EndInfo);
+  return EndInfo.Status;
 }
