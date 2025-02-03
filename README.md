@@ -3,7 +3,8 @@
 - **[Data structures](OfflineDumpPkg/Include/Guid/)** - headers with GUIDs, enums, and structs used in
   offline crash dumps.
 
-- **[Libraries](OfflineDumpPkg/Include/Library/OfflineDumpLib.h)** -- support code for writing offline crash dumps.
+- **[OfflineDumpLib](OfflineDumpPkg/Include/Library/OfflineDumpLib.h)** --
+  support code for writing offline crash dumps.
 
   - Helpers for locating the partition where the dump should be written.
   - Helpers for reading Windows-defined UEFI variables related to offline crash dumps.
@@ -98,7 +99,7 @@ platform files in a directory like `ROOT\workspace\Build\EmulatorX64\DEBUG_VS202
 You will need to create a `workspace\Build\EmulatorX64\DEBUG_VS2022\X64\disk.dmg` file that will act as
 the partition to receive the dump file. Use any tool (e.g. hex editor or dd) to create a zero-filled
 file large enough to contain the dump (generally a little bit larger than the emulator's physical memory,
-e.g. 129MB if the emulator is configured for 129MB of memory), e.g.
+e.g. 129MB if the emulator is configured for 128MB of memory), e.g.
 `dd if=/dev/zero of=disk.dmg bs=1M count=129`
 
 You may want to copy the firmware variables setup script to that directory, i.e. from repo root, run:
