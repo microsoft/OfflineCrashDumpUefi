@@ -380,6 +380,10 @@ OfflineDumpCollect (
     DEBUG_PRINT (DEBUG_WARN, "Forcing unencrypted dump\n");
   }
 
+  if (DumpInfo.Options.ForceUnredacted) {
+    DEBUG_PRINT (DEBUG_WARN, "Forcing unredacted dump\n");
+  }
+
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
     OFFLINE_DUMP_SECTION const * const  pSection = &DumpInfo.pSections[SectionIndex];
 
@@ -415,6 +419,11 @@ OfflineDumpCollect (
       break;
 
     case OfflineDumpSecureKernelStateStarted:
+
+      if (DumpInfo.Options.ForceUnredacted) {
+        // Redaction not needed.
+        break;
+      }
 
       // Redaction needed. Configuration data required.
       if ((DumpInfo.pSecureOfflineDumpConfiguration == NULL) || (DumpInfo.SecureOfflineDumpConfigurationSize == 0)) {

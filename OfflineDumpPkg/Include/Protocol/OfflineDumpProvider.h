@@ -376,9 +376,20 @@ typedef struct {
   UINT32    ForceUnencrypted : 1;
 
   //
+  // For testing/debugging purposes. Production environment MUST NOT set this flag.
+  //
+  // - FALSE: If secure kernel is started, the collector will require secure offline dump
+  //   configuration information to be present and will redact secure-kernel data from the
+  //   dump.
+  // - TRUE: The collector will ignore the secure offline dump configuration information and
+  //   will not redact secure-kernel data from the dump, even if the secure kernel is started.
+  //
+  UINT32    ForceUnredacted : 1;
+
+  //
   // Reserved - must be set to 0.
   //
-  UINT32    Reserved1        : 21;
+  UINT32    Reserved1       : 20;
 } OFFLINE_DUMP_OPTIONS;
 
 STATIC_ASSERT (
@@ -632,15 +643,19 @@ typedef struct {
   // started the secure kernel, or set to OfflineDumpSecureKernelStateStarted if the OS
   // started the secure kernel.
   //
+  // This MUST reflect the true state of the secure kernel. In a debug scenario where
+  // redaction should be disabled, use the ForceUnredacted option instead of setting this
+  // field to an inaccurate value.
+  //
   // The collector uses this value to determine how to redact secure-kernel CPU and memory.
   //
-  // - If this value is set to NotStarted, the collector will ignore the
-  //   pSecureOfflineDumpConfiguration field and will not attempt to redact any
-  //   secure-kernel CPU or memory.
-  // - If this value is set to Started, the collector will use the
-  //   pSecureOfflineDumpConfiguration field to determine how to redact secure-kernel CPU
-  //   and memory. If the pSecureOfflineDumpConfiguration field is NULL or invalid, the
-  //   collector will not write the dump and will return an error.
+  // - If this value is set to NotStarted or the ForceUnredacted option is set, the
+  //   collector will ignore the pSecureOfflineDumpConfiguration field and will not attempt
+  //   to redact any secure-kernel CPU or memory.
+  // - If this value is set to Started and the ForceUnredacted option is clear, the
+  //   collector will use the pSecureOfflineDumpConfiguration field to determine how to
+  //   redact secure-kernel CPU and memory. If the pSecureOfflineDumpConfiguration field is
+  //   NULL or invalid, the collector will not write the dump and will return an error.
   //
   OFFLINE_DUMP_SECURE_KERNEL_STATE    SecureKernelState;
 } OFFLINE_DUMP_INFO;

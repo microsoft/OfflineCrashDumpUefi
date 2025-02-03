@@ -6,8 +6,8 @@ Users should switch to using the binary OfflineDumpCollect.efi and launch it
 via an OfflineDumpCollectExecute function instead of calling OfflineDumpCollect.
 */
 
-#ifndef _included_Library_OfflineDumpInternal_h
-#define _included_Library_OfflineDumpInternal_h
+#ifndef _included_Library_OfflindDumpCollectLib_h
+#define _included_Library_OfflindDumpCollectLib_h
 
 #include <Protocol/OfflineDumpProvider.h>
 
@@ -50,4 +50,4 @@ OfflineDumpCollect (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider
   );
 
-#endif // _included_Library_OfflineDumpInternal_h
+#endif // _included_Library_OfflindDumpCollectLib_h

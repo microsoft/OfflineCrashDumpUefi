@@ -1,4 +1,4 @@
-#include <OfflineDumpInternal.h>
+#include <OfflineDumpCollectLib.h>
 #include <Uefi.h>
 #include <Library/DebugLib.h>
 #include <Library/UefiBootServicesTableLib.h>
