@@ -14,13 +14,14 @@
   - OFFLINE_DUMP_OPTIONS (struct)
   - OFFLINE_DUMP_SECTION_TYPE (enum)
   - OFFLINE_DUMP_SECTION_OPTIONS (struct)
+  - OFFLINE_DUMP_SECURE_KERNEL_STATE (enum)
 
   - OFFLINE_DUMP_PROVIDER_BEGIN (function pointer)
   - OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS (function pointer)
   - OFFLINE_DUMP_PROVIDER_END (function pointer)
   - OFFLINE_DUMP_DATA_COPY (function pointer)
 
-  TODO: Better names for structures, OfflineDumpCollect.efi?
+  TODO: Better names for structures, OfflineDumpCollect?
 **/
 
 #ifndef _included_Protocol_OfflineDumpProvider_h
@@ -38,8 +39,20 @@
   Protocol implemented by platform ISV to provide dump information to the Offline
   Crash Dump Collector (OfflineDumpCollect) and to configure collector behavior.
 
+When OfflineDumpCollect is invoked as a function:
+
+  - ISV implements this protocol.
+  - ISV invokes OfflineDumpCollect, passing a pointer to the protocol.
+  - OfflineDumpCollect calls the protocol's Begin function to get dump parameters.
+  - OfflineDumpCollect writes the dump data, periodically calling the protocol's ReportProgress function.
+  - OfflineDumpCollect calls the protocol's End function.
+  - OfflineDumpCollect returns.
+  - ISV updates dump status variables and reboots.
+
+When OfflineDumpCollect.efi is invoked as an application:
+
   - ISV implements this protocol and installs the protocol instance into the EFI handle table.
-  - ISV launches OfflineDumpCollect.efi.
+  - ISV launches OfflineDumpCollect.efi (e.g. by calling an OfflineDumpCollectExecute helper).
   - OfflineDumpCollect.efi locates the protocol in the EFI handle table.
   - OfflineDumpCollect.efi calls the protocol's Begin function to get dump parameters.
   - OfflineDumpCollect.efi writes the dump data, periodically calling the protocol's ReportProgress function.
@@ -54,10 +67,10 @@ typedef struct _OFFLINE_DUMP_PROVIDER_PROTOCOL OFFLINE_DUMP_PROVIDER_PROTOCOL;
   Revision of the OFFLINE_DUMP_PROVIDER_PROTOCOL interface that a component supports.
 
   The protocol implementation (provider) specifies its revision in the Revision field
-  of the OFFLINE_DUMP_PROVIDER_PROTOCOL protocol structure. The collector uses this value
-  to determine which fields of the protocol structure can be accessed. It will never access
-  fields that were added in a later revision and will use a default value instead (typically
-  NULL or 0).
+  of the OFFLINE_DUMP_PROVIDER_PROTOCOL structure. The collector uses this value to
+  determine which fields of the protocol structure can be accessed. It will never access
+  fields that were added in a later revision and will use a default value instead
+  (typically NULL or 0).
 
   The collector implementation specifies its revision value when calling the Begin
   function. The provider uses this value to determine which features the
@@ -77,39 +90,55 @@ STATIC_ASSERT (
                );
 
 /**
-  Value indicating whether the section memory and CPU contexts may contain secure-kernel
-  data. Used in the SecureKernelState field of OFFLINE_DUMP_INFO.
+  Value that reflects any restriction that the high-level operating system (typically the
+  trusted OS) has placed on the dump collector's behavior. This enumeration is used in the
+  SecureOfflineDumpControl field of the OFFLINE_DUMP_INFO structure.
 **/
 typedef enum {
   //
-  // Invalid value. If specified, the dump collector will not write the dump and will
+  // This value indicates that the high-level operating system has prohibited collection
+  // of offline dumps. For example, the high-level OS might set this value if it has
+  // started a trusted OS kernel, has secrets in memory that it does not want to be
+  // written to the dump, and is unable to configure dump redaction.
+  //
+  // If this value is specified, the dump collector will not collect a dump and will
   // return an error.
   //
-  OfflineDumpSecureKernelStateUnspecified,
+  OfflineDumpControlDumpNotAllowed,
 
   //
-  // The memory sections and CPU contexts do not contain any secure-kernel data.
+  // This value indicates that the high-level operating system has not placed any
+  // restrictions on dump collection. Typically this means that the high-level OS has not
+  // started a trusted OS and that no secure-kernel secrets are expected to be in memory.
+  //
+  // This is the default value (the value that the collector should use if the high-level
+  // OS has not set any restrictions).
   //
   // If this value is specified, the dump collector will ignore the
   // SecureOfflineDumpConfiguration field and will not attempt to redact any
   // secure-kernel data from the dump.
   //
-  OfflineDumpSecureKernelStateNotStarted,
+  OfflineDumpControlDumpAllowed,
 
   //
-  // The memory sections and CPU contexts may contain secure-kernel data.
+  // This value indicates that the high-level operating system allows an offline dump
+  // only if secure-kernel data is redacted from the dump. For example, the high-level
+  // OS might set this value if it has started a trusted OS kernel, has secrets in memory
+  // that it does not want to be written to the dump, and successfully configured dump
+  // redaction.
   //
   // If this value is specified, the dump collector will use the
   // SecureOfflineDumpConfiguration field to determine how to redact secure-kernel
-  // data from the dump. If the SecureOfflineDumpConfiguration field is not provided,
-  // the dump collector will not write the dump and will return an error.
+  // data from the dump. If the SecureOfflineDumpConfiguration field does not provide
+  // valid configuration data, the dump collector will not write the dump and will
+  // return an error.
   //
-  OfflineDumpSecureKernelStateStarted,
-} OFFLINE_DUMP_SECURE_KERNEL_STATE;
+  OfflineDumpControlRedactedDumpAllowed,
+} OFFLINE_DUMP_CONTROL;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_SECURE_KERNEL_STATE) == 4,
-               "OFFLINE_DUMP_SECURE_KERNEL_STATE should be 4 bytes"
+               sizeof (OFFLINE_DUMP_CONTROL) == 4,
+               "OFFLINE_DUMP_CONTROL should be 4 bytes"
                );
 
 /**
@@ -138,7 +167,7 @@ typedef enum {
   // Implies the following:
   //
   // - The data will generally be written to the dump as a RAW_DUMP_SECTION_DDR_RANGE section
-  //   unless it contains non-VTL0 memory, in which case it may be reacted or split into multiple
+  //   unless it contains non-VTL0 memory, in which case it may be redacted or split into multiple
   //   sections.
   // - The DdrRange variant of the Information union should be used.
   // - The section's name should start with "DDR".
@@ -212,7 +241,7 @@ typedef
                                  );
 
 /**
-  Information about the collector passed to the provider's Begin function.
+  Information from the collector that is passed to the provider's Begin function.
 
   The collector provides this information to the protocol implementation (provider) when calling the
   Begin function. The provider uses this information to configure its behavior.
@@ -245,7 +274,7 @@ typedef struct {
 } OFFLINE_DUMP_BEGIN_INFO;
 
 /**
-  Information about the collector passed to the provider's ReportProgress function.
+  Information from the collector that is passed to the provider's ReportProgress function.
 
   The collector provides this information to the protocol implementation (provider) when calling the
   ReportProgress function.
@@ -269,7 +298,7 @@ typedef struct {
 } OFFLINE_DUMP_PROGRESS_INFO;
 
 /**
-  Information about the dump passed to the provider's End function.
+  Information from the collector that is passed to the provider's End function.
 
   The collector provides this information to the protocol implementation (provider) when calling the
   End function.
@@ -317,10 +346,10 @@ typedef struct {
 typedef struct {
   //
   // Maximum total bytes to allocate for the dump collector's I/O buffers (soft limit). If
-  // this is 0, the collector will select a reasonable default (currently 3MB).
+  // this is 0, the collector will select a reasonable default.
   //
   // - If BufferMemoryLimit == 0 then ActualBufferMemoryLimit will be set to a default
-  //   value.
+  //   value (currently 3MB).
   // - Else if BufferMemoryLimit < BlockSize * ActualBufferCount then
   //   ActualBufferMemoryLimit will be set to BlockSize * ActualBufferCount.
   // - Else ActualBufferMemoryLimit will be set to BufferMemoryLimit.
@@ -337,13 +366,13 @@ typedef struct {
   //
   // Number of data buffers to use for async I/O. Significant only if the device supports
   // async I/O (EFI_BLOCK_IO2_PROTOCOL). If this is 0, the collector will select a
-  // reasonable default (currently 3).
+  // reasonable default.
   //
   // Current implementation:
   //
   // - If the device only supports EFI_BLOCK_IO_PROTOCOL or if DisableBlockIo2 is TRUE
   //   then ActualBufferCount will be set to 1.
-  // - Else if BufferCount == 0 then ActualBufferCount will be set to a default value.
+  // - Else if BufferCount == 0 then ActualBufferCount will be set to a default (currently 3).
   // - Else if BufferCount < 2 then ActualBufferCount will be set to 2.
   // - Else ActualBufferCount will be set to BufferCount.
   //
@@ -363,33 +392,31 @@ typedef struct {
 
   //
   // For testing/debugging purposes.
-  // If TRUE, indicates that the collector should not set the DUMP_VALID flag
-  // when finalizing the dump.
+  //
+  // If TRUE, the collector will not set the DUMP_VALID flag when finalizing the dump.
   //
   UINT32    ForceDumpInvalid : 1;
 
   //
-  // For testing/debugging purposes. Production builds MUST NOT set this flag.
-  // If TRUE, the collector should ignore the UEFI variable configuration and always produce
-  // an unencrypted dump.
+  // For testing/debugging purposes. Production environment MUST NOT set this flag.
+  //
+  // If TRUE, the collector will ignore the full-dump encryption UEFI variables and will
+  // always produce an unencrypted dump.
   //
   UINT32    ForceUnencrypted : 1;
 
   //
   // For testing/debugging purposes. Production environment MUST NOT set this flag.
   //
-  // - FALSE: If secure kernel is started, the collector will require secure offline dump
-  //   configuration information to be present and will redact secure-kernel data from the
-  //   dump.
-  // - TRUE: The collector will ignore the secure offline dump configuration information and
-  //   will not redact secure-kernel data from the dump, even if the secure kernel is started.
+  // If TRUE, the collector will ignore the SecureOfflineDumpControl field and will
+  // behave as if SecureOfflineDumpControl == OfflineDumpControlDumpAllowed.
   //
-  UINT32    ForceUnredacted : 1;
+  UINT32    ForceDumpAllowed : 1;
 
   //
   // Reserved - must be set to 0.
   //
-  UINT32    Reserved1       : 20;
+  UINT32    Reserved1        : 20;
 } OFFLINE_DUMP_OPTIONS;
 
 STATIC_ASSERT (
@@ -399,8 +426,7 @@ STATIC_ASSERT (
 
 /**
   Information provided by the protocol implementation (provider) to the collector to control section
-  behavior. This information is provided in the Options field of
-  OFFLINE_DUMP_SECTION.
+  behavior. This information is provided in the Options field of OFFLINE_DUMP_SECTION.
 **/
 typedef struct {
   //
@@ -433,7 +459,7 @@ STATIC_ASSERT (
   multiple sections being written to the dump, or it may be ignored entirely. For example:
 
   - A single DdrRange section may result in multiple DDR sections being written to the dump, e.g. if
-    parts of the section contain secure-kernel data and need to be redacted.
+    parts of the section contain secure-kernel data and need to be encrypted.
   - If the collector does not support the specified section, it will ignore the section and will not write
     it to the dump.
 **/
@@ -454,11 +480,11 @@ typedef struct {
   RAW_DUMP_SECTION_HEADER_FLAGS    Flags;
 
   //
-  // Section name. Ends at first '\0', or at 20 chars. Not guaranteed to be unique.
+  // Section name. Ends at first '\0', or at 20 chars.
   // If this is set to NULL or "" then the collector will generate a default name like
   // "DDR-004.bin" for the section.
   //
-  // Section names should be unique and should be valid NTFS file names.
+  // Section names should be unique and should be valid NTFS file names (not checked).
   // DdrRange section names should start with "DDR".
   //
   CHAR8 const                     *pName;
@@ -519,7 +545,9 @@ STATIC_ASSERT (
 */
 typedef struct {
   //
-  // Configuration options for the collector. Usually the default (0) values are ok.
+  // Configuration options for the collector, including options for adjusting the I/O
+  // buffer allocation (for tuning I/O performance and memory usage). Usually the default
+  // (0) values are ok.
   //
   OFFLINE_DUMP_OPTIONS    Options;
 
@@ -532,9 +560,9 @@ typedef struct {
   // directly to this device, starting at LBA 0 (no filesystem is involved).
   //
   // If set to NULL, the collector will attempt to locate an appropriate device, guided by the
-  // value of the OfflineMemoryDumpUseCapability variable. If the collector is unable to find
-  // an appropriate device, the collector will fail to write a dump and will end the dump with
-  // status EFI_NOT_FOUND.
+  // value of the OfflineMemoryDumpUseCapability UEFI variable. If the collector is unable to
+  // find an appropriate device, the collector will fail to write a dump and will end the dump
+  // with status EFI_NOT_FOUND.
   //
   EFI_HANDLE    BlockDevice;
 
@@ -619,15 +647,26 @@ typedef struct {
   UINT32                   Reserved1;
 
   //
-  // Data provided by the OS via SMC to configure secure offline dump, or NULL if none.
+  // Set to the address of a buffer containing secure kernel configuration data from
+  // the high-level operating system. This is used to redact secure-kernel secrets
+  // when generating the offline dump.
   //
-  // The firmware should provide a CSRT "Offline Dump Capabilities" table to the
-  // high-level OS (HLOS). The table includes a "Configuration SMC ID". If the HLOS
-  // requires offline dump redaction, it will invoke the Configuration SMC to provide
-  // secure offline dump configuration (pointer and size). If the OS invokes the
-  // Configuration SMC, the provider must set the pSecureOfflineDumpConfiguration and
-  // SecureOfflineDumpConfigurationSize fields to the pointer and size provided by the
-  // HLOS via the Configuration SMC call.
+  // This value should be obtained from trusted firmware.
+  // The firmware should provide a CSRT "Offline Dump Capabilities" entry. The entry
+  // includes a "Configuration SMC ID" and a "Control SMC ID". If the high-level OS
+  // requires offline dump redaction, it will invoke the  SMCs to apply the necessary
+  // restrictions.
+  //
+  // - Trusted firmware should store pSecureOfflineDumpConfiguration and
+  //   SecureOfflineDumpConfigurationSize variables in secure (fenced) memory. The values
+  //   should be initialized to { NULL, 0 }.
+  // - The high-level OS may invoke the "Offline Dump Configuration" SMC to change the
+  //   value of the variables. The SMC handler should update its stored value
+  //   accordingly.
+  // - If a crash occurs, the firmware should save the content of the referenced buffer
+  //   so that it can be used during offline dump collection. During collection,
+  //   the variable values from trusted firmware are used to set the
+  //   pSecureOfflineDumpConfiguration and SecureOfflineDumpConfigurationSize fields.
   //
   VOID const    *pSecureOfflineDumpConfiguration;
 
@@ -638,33 +677,51 @@ typedef struct {
   UINT32        SecureOfflineDumpConfigurationSize;
 
   //
-  // Set to a value indicating whether the section memory and CPU contexts might contain
-  // secure-kernel data, i.e. set to OfflineDumpSecureKernelStateNotStarted if the OS never
-  // started the secure kernel, or set to OfflineDumpSecureKernelStateStarted if the OS
-  // started the secure kernel.
+  // Set to a value indicating any restrictions that the high-level operating system has
+  // placed on the dump collector's behavior.
   //
-  // This MUST reflect the true state of the secure kernel. In a debug scenario where
-  // redaction should be disabled, use the ForceUnredacted option instead of setting this
-  // field to an inaccurate value.
+  // This value should be obtained from trusted firmware.
+  // The firmware should provide a CSRT "Offline Dump Capabilities" entry. The entry
+  // includes a "Configuration SMC ID" and a "Control SMC ID". If the high-level OS
+  // requires offline dump redaction, it will invoke the  SMCs to apply the necessary
+  // restrictions.
+  //
+  // - Trusted firmware should store an OfflineDumpControl variable in secure (fenced)
+  //   memory. The value should be initialized to OfflineDumpControlDumpAllowed (1).
+  // - The high-level OS may invoke the "Offline Dump Control" SMC to change the value
+  //   of the OfflineDumpControl variable. The SMC handler should update its stored value
+  //   accordingly.
+  // - If a crash occurs, the firmware should save the value of the OfflineDumpControl
+  //   variable so that it can be used during offline dump collection. During collection,
+  //   the variable value from trusted firmware is used to set the SecureOfflineDumpControl
+  //   field.
+  //
+  // This value MUST reflect the true state of the high-level operating system's restrictions.
+  // In a debug scenario where the high-level operating system's restrictions need to be
+  // ignored, use the ForceDumpAllowed option instead of setting this field to an inaccurate
+  // value.
   //
   // The collector uses this value to determine how to redact secure-kernel CPU and memory.
   //
-  // - If this value is set to NotStarted or the ForceUnredacted option is set, the
-  //   collector will ignore the pSecureOfflineDumpConfiguration field and will not attempt
-  //   to redact any secure-kernel CPU or memory.
-  // - If this value is set to Started and the ForceUnredacted option is clear, the
-  //   collector will use the pSecureOfflineDumpConfiguration field to determine how to
-  //   redact secure-kernel CPU and memory. If the pSecureOfflineDumpConfiguration field is
-  //   NULL or invalid, the collector will not write the dump and will return an error.
+  // - If the ForceDumpAllowed option is set, the collector will ignore this field and will
+  //   collect the dump with no redaction.
+  // - If the ForceDumpAllowed option is unset and this value is set to Allowed, the
+  //   collector will collect an unredacted dump.
+  // - If the ForceDumpAllowed option is unset and this value is set to RedactedDumpAllowed,
+  //   the collector will collect a redacted dump using the pSecureOfflineDumpConfiguration
+  //   field to determine how to redact secure-kernel CPU and memory. If the
+  //   pSecureOfflineDumpConfiguration field is NULL or invalid, the collector will not write
+  //   the dump and will return an error.
+  // - If the ForceDumpAllowed option is unset and this value is set to any other value, the
+  //   collector will not collect a dump and will return an error.
   //
-  OFFLINE_DUMP_SECURE_KERNEL_STATE    SecureKernelState;
+  OFFLINE_DUMP_CONTROL    SecureOfflineDumpControl;
 } OFFLINE_DUMP_INFO;
 
 /**
   Called by the collector when it is about to begin writing the dump. The provider
-  uses this function to initialize any state needed for the dump,
-  identify the revision of the collector, and provide information about the dump to
-  the collector.
+  uses this function to identify the revision of the collector, initialize any state needed
+  for the dump, and provide information about the dump to the collector.
 
   @param[in]   pThis              A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
   @param[in]   BeginInfoSize      The size of the pBeginInfo buffer (i.e.
@@ -697,8 +754,6 @@ typedef
 
 /**
   Called by the collector every few seconds to report on dump progress.
-
-  TODO: Do we really need this to return an error code?
 
   The provider uses this function to update UI to reflect dump progress.
   For example, the provider might update a progress bar or blink an LED.

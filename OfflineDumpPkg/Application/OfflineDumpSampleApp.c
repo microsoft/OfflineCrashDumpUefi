@@ -267,7 +267,7 @@ UefiMain (
   #define CPU_CONTEXT_COUNT  4 // TODO: Get the actual number of CPU cores.
   CONTEXT_ARM64  CpuContexts[CPU_CONTEXT_COUNT];
   SetMem (CpuContexts, sizeof (CpuContexts), 0);
-  UINT32 const   CpuContextCount                = CPU_CONTEXT_COUNT;
+  UINT32 const  CpuContextCount = CPU_CONTEXT_COUNT;
   for (unsigned i = 0; i < CpuContextCount; i += 1) {
     CONTEXT_ARM64  *pContext = &CpuContexts[i];
 
@@ -299,9 +299,9 @@ UefiMain (
     .DumpInfo.DumpReasonParameter3               = 0x1234,     // TODO: Use real dump bucket parameters.
     .DumpInfo.DumpReasonParameter4               = 0x0,        // TODO: Use real dump bucket parameters.
     .DumpInfo.Flags                              = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
-    .DumpInfo.pSecureOfflineDumpConfiguration    = NULL,                                   // TODO: Use real secure dump configuration from SMC.
-    .DumpInfo.SecureOfflineDumpConfigurationSize = 0,                                      // TODO: Use real secure dump configuration size.
-    .DumpInfo.SecureKernelState                  = OfflineDumpSecureKernelStateNotStarted, // TODO: Use real secure kernel state.
+    .DumpInfo.pSecureOfflineDumpConfiguration    = NULL,                                 // TODO: Use real configuration ptr from trusted firmware (SMC).
+    .DumpInfo.SecureOfflineDumpConfigurationSize = 0,                                    // TODO: Use real configuration size from trusted firmware (SMC).
+    .DumpInfo.SecureOfflineDumpControl           = OfflineDumpControlDumpAllowed,        // TODO: Use real control value from trusted firmware (SMC).
   };
 
   // Collect the dump.
