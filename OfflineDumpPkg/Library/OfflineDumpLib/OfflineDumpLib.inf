@@ -39,7 +39,7 @@
 [Guids]
 
   gOfflineDumpPartitionTypeGuid
-  gOfflineDumpVendorGuid
+  gOfflineDumpVariableGuid
 
 [Protocols]
 
