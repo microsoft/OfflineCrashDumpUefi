@@ -43,21 +43,24 @@ When OfflineDumpCollect is invoked as a function:
 
   - ISV implements this protocol.
   - ISV invokes OfflineDumpCollect, passing a pointer to the protocol.
-  - OfflineDumpCollect calls the protocol's Begin function to get dump parameters.
-  - OfflineDumpCollect writes the dump data, periodically calling the protocol's ReportProgress function.
-  - OfflineDumpCollect calls the protocol's End function.
-  - OfflineDumpCollect returns.
+    - OfflineDumpCollect calls the protocol's Begin function to get dump parameters.
+    - OfflineDumpCollect writes the dump data, periodically calling the protocol's ReportProgress function.
+    - OfflineDumpCollect calls the protocol's End function, providing status and statistics.
+    - OfflineDumpCollect returns status.
   - ISV updates dump status variables and reboots.
 
 When OfflineDumpCollect.efi is invoked as an application:
 
-  - ISV implements this protocol and installs the protocol instance into the EFI handle table.
-  - ISV launches OfflineDumpCollect.efi (e.g. by calling an OfflineDumpCollectExecute helper).
-  - OfflineDumpCollect.efi locates the protocol in the EFI handle table.
-  - OfflineDumpCollect.efi calls the protocol's Begin function to get dump parameters.
-  - OfflineDumpCollect.efi writes the dump data, periodically calling the protocol's ReportProgress function.
-  - OfflineDumpCollect.efi calls the protocol's End function.
-  - OfflineDumpCollect.efi exits.
+  - ISV implements this protocol.
+  - ISV invokes an OfflineDumpCollectExecute helper, passing a pointer to the protocol
+    and the path to the OfflineDumpCollect.efi application binary.
+    - OfflineDumpCollectExecute installs the protocol instance into the EFI handle table.
+    - OfflineDumpCollectExecute loads and starts the OfflineDumpCollect.efi application.
+    - OfflineDumpCollect.efi calls the protocol's Begin function to get dump parameters.
+    - OfflineDumpCollect.efi writes the dump data, periodically calling the protocol's ReportProgress function.
+    - OfflineDumpCollect.efi calls the protocol's End function, providing status and statistics.
+    - OfflineDumpCollect returns status.
+    - OfflineDumpCollectExecute returns status.
   - ISV updates dump status variables and reboots.
 
 **/
@@ -99,7 +102,7 @@ typedef enum {
   // This value indicates that the high-level operating system has prohibited collection
   // of offline dumps. For example, the high-level OS might set this value if it has
   // started a trusted OS kernel, has secrets in memory that it does not want to be
-  // written to the dump, and is unable to configure dump redaction.
+  // written to the dump, and has not yet configured dump redaction.
   //
   // If this value is specified, the dump collector will not collect a dump and will
   // return an error.
@@ -124,8 +127,8 @@ typedef enum {
   // This value indicates that the high-level operating system allows an offline dump
   // only if secure-kernel data is redacted from the dump. For example, the high-level
   // OS might set this value if it has started a trusted OS kernel, has secrets in memory
-  // that it does not want to be written to the dump, and successfully configured dump
-  // redaction.
+  // that it does not want to be written to the dump, and has successfully configured
+  // dump redaction.
   //
   // If this value is specified, the dump collector will use the
   // SecureOfflineDumpConfiguration field to determine how to redact secure-kernel
