@@ -23,11 +23,13 @@
 
   OfflineDumpLib
 
-  UefiApplicationEntryPoint
   BaseMemoryLib
   DebugLib
+  MemoryAllocationLib
   UefiBootServicesTableLib
   UefiLib
+
+  UefiApplicationEntryPoint
 
 [Pcd]
 

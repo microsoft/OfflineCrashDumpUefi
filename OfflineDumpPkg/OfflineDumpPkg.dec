@@ -26,7 +26,7 @@
 
   ## Include/Guid/OfflineDumpConfig.h
   ## Vendor for firmware variables set by the OS. {77fa9abd-0359-4d32-bd60-28f4e78f784b}
-  gOfflineDumpVendorGuid              = { 0x77fa9abd, 0x0359, 0x4d32, { 0xBD, 0x60, 0x28, 0xf4, 0xe7, 0x8f, 0x78, 0x4b }}
+  gOfflineDumpVariableGuid            = { 0x77fa9abd, 0x0359, 0x4d32, { 0xBD, 0x60, 0x28, 0xf4, 0xe7, 0x8f, 0x78, 0x4b }}
 
   ## Include/Guid/OfflineDumpConfig.h
   ## Partition type GUID for the offline dump partition. {66C9B323-F7FC-48B6-BF96-6F32E335A428}

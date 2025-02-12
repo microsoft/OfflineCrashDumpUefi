@@ -133,7 +133,7 @@ typedef enum {
 //
 
 extern EFI_GUID  gOfflineDumpConfigurationTableGuid;
-extern EFI_GUID  gOfflineDumpVendorGuid;
+extern EFI_GUID  gOfflineDumpVariableGuid;
 extern EFI_GUID  gOfflineDumpPartitionTypeGuid;
 
 #endif // _included_Guid_OfflineDumpConfig_h

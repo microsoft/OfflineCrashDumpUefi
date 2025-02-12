@@ -17,7 +17,7 @@ GetVariableOfflineMemoryDumpUseCapability (
 
   Status = gST->RuntimeServices->GetVariable (
                                               OFFLINE_DUMP_USE_CAPABILITY_VARIABLE_NAME,
-                                              &gOfflineDumpVendorGuid,
+                                              &gOfflineDumpVariableGuid,
                                               NULL,
                                               &DataSize,
                                               &Data
@@ -37,7 +37,7 @@ GetVariableOfflineMemoryDumpOsData (
 
   Status = gST->RuntimeServices->GetVariable (
                                               OFFLINE_DUMP_OS_DATA_VARIABLE_NAME,
-                                              &gOfflineDumpVendorGuid,
+                                              &gOfflineDumpVariableGuid,
                                               NULL,
                                               &DataSize,
                                               &Data
@@ -57,7 +57,7 @@ GetVariableOfflineMemoryDumpEncryptionAlgorithm (
 
   Status = gST->RuntimeServices->GetVariable (
                                               OFFLINE_DUMP_ENCRYPTION_ALGORITHM_VARIABLE_NAME,
-                                              &gOfflineDumpVendorGuid,
+                                              &gOfflineDumpVariableGuid,
                                               NULL,
                                               &DataSize,
                                               &Data
@@ -78,7 +78,7 @@ GetVariableOfflineMemoryDumpEncryptionPublicKey (
 
   Status = gST->RuntimeServices->GetVariable (
                                               OFFLINE_DUMP_ENCRYPTION_PUBLIC_KEY_VARIABLE_NAME,
-                                              &gOfflineDumpVendorGuid,
+                                              &gOfflineDumpVariableGuid,
                                               NULL,
                                               &DataSize,
                                               NULL
@@ -102,7 +102,7 @@ GetVariableOfflineMemoryDumpEncryptionPublicKey (
     } else {
       Status = gST->RuntimeServices->GetVariable (
                                                   OFFLINE_DUMP_ENCRYPTION_PUBLIC_KEY_VARIABLE_NAME,
-                                                  &gOfflineDumpVendorGuid,
+                                                  &gOfflineDumpVariableGuid,
                                                   NULL,
                                                   &DataSize,
                                                   pData

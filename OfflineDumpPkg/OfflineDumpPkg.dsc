@@ -58,23 +58,8 @@
 
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
 
-  OfflineDumpPkg/Application/OfflineDumpSampleApp.inf {
-    <PcdsFixedAtBuild>
-      # For sample, allow use of RngDxe based on BaseRngLibTimerLib.
-      gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE
-  }
-
-  OfflineDumpPkg/Application/OfflineDumpBench.inf {
-    <PcdsFixedAtBuild>
-      # For sample, allow use of RngDxe based on BaseRngLibTimerLib.
-      gEfiMdePkgTokenSpaceGuid.PcdEnforceSecureRngAlgorithms|FALSE
-  }
-
-  # For development purposes, provide a generic (insecure) RngDxe for platforms that don't have one.
-  SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf {
-    <LibraryClasses>
-      RngLib|MdeModulePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
-  }
+  OfflineDumpPkg/Application/OfflineDumpSampleApp.inf
+  OfflineDumpPkg/Application/OfflineDumpBench.inf
 
 [PcdsFixedAtBuild]
 
