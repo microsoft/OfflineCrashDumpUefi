@@ -4,10 +4,12 @@
 #include <Uefi.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h> // ASSERT
+#include <Library/DevicePathLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/TimerLib.h> // For benchmarking.
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Protocol/LoadedImage.h>
 
 #ifdef __INTELLISENSE__
 #define PcdGetBool(x)  TRUE
@@ -168,6 +170,62 @@ SampleReportProgress (
   return EFI_SUCCESS; // If this returns an error, the collector will stop writing the dump.
 }
 
+// Create a device path that points to OfflineDumpCollect.efi.
+// For demonstration purposes, look for OfflineDumpCollect.efi in the same directory as
+// this sample app.
+static EFI_DEVICE_PATH_PROTOCOL *
+SampleGetPathToOfflineDumpCollect (
+  IN EFI_HANDLE  ImageHandle
+  )
+{
+  EFI_STATUS  Status;
+
+  // Get device path of the running app (OfflineDumpSampleApp.efi).
+  EFI_DEVICE_PATH_PROTOCOL  *pThisImagePath = NULL;
+
+  Status = gBS->HandleProtocol (ImageHandle, &gEfiLoadedImageDevicePathProtocolGuid, (void **)&pThisImagePath);
+
+  if (EFI_ERROR (Status)) {
+    Print (L"HandleProtocol(LoadedImageDevicePath) failed (%r)\n", Status);
+    return NULL;
+  }
+
+  // Get text path of the running app.
+  CHAR16  *pThisImagePathText = ConvertDevicePathToText (pThisImagePath, FALSE, FALSE);
+  if (pThisImagePathText == NULL) {
+    Print (L"ConvertDevicePathToText(LoadedImageDevicePath) failed\n");
+    return NULL;
+  }
+
+  // Find the end of the directory part of the running app's path.
+  UINTN  ThisImageDirEnd = StrLen (pThisImagePathText);
+  while (ThisImageDirEnd > 0 && pThisImagePathText[ThisImageDirEnd - 1] != L'\\') {
+    ThisImageDirEnd -= 1;
+  }
+
+  // Create a text path that points to OfflineDumpCollect.efi in the running app's directory.
+  CHAR16  *pOfflineDumpCollectPathText = CatSPrint (NULL, L"%.*sOfflineDumpCollect.efi", (UINT32)ThisImageDirEnd, pThisImagePathText);
+  FreePool (pThisImagePathText);
+  pThisImagePathText = NULL;
+  if (pOfflineDumpCollectPathText == NULL) {
+    Print (L"CatSPrint(OfflineDumpCollectPath) failed\n");
+    return NULL;
+  }
+
+  Print (L"Running \"%s\"\n", pOfflineDumpCollectPathText);
+
+  // Get device path of OfflineDumpCollect.efi in the running app's directory.
+  EFI_DEVICE_PATH_PROTOCOL  *pOfflineDumpCollectPath = ConvertTextToDevicePath (pOfflineDumpCollectPathText);
+  FreePool (pOfflineDumpCollectPathText);
+  pOfflineDumpCollectPathText = NULL;
+  if (pOfflineDumpCollectPath == NULL) {
+    Print (L"ConvertTextToDevicePath(OfflineDumpCollectPath) failed\n");
+    return NULL;
+  }
+
+  return pOfflineDumpCollectPath;
+}
+
 EFI_STATUS EFIAPI
 UefiMain (
   IN EFI_HANDLE        ImageHandle,
@@ -304,11 +362,24 @@ UefiMain (
     .DumpInfo.SecureOfflineDumpControl           = OfflineDumpControlDumpAllowed,        // TODO: Use real control value from trusted firmware (SMC).
   };
 
-  // Collect the dump.
+  // Run OfflineDumpCollect.efi to Collect the dump.
+  // Alternative would be to link against OfflineDumpCollectLib and call OfflineDumpCollect(&Protocol).
+
+  EFI_DEVICE_PATH_PROTOCOL  *pOfflineDumpCollectPath = SampleGetPathToOfflineDumpCollect (ImageHandle);
+  if (pOfflineDumpCollectPath == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
 
   UINT64 const  TimeStart = GetPerformanceCounter ();
-  Status = OfflineDumpCollect (&SampleDumpProvider.Protocol);
+  Status = OfflineDumpCollectExecutePath (
+                                          &SampleDumpProvider.Protocol,
+                                          ImageHandle,
+                                          pOfflineDumpCollectPath
+                                          );
   UINT64 const  TimeEnd = GetPerformanceCounter ();
+  FreePool (pOfflineDumpCollectPath);
+  pOfflineDumpCollectPath = NULL;
 
   // Report results.
 

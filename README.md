@@ -7,8 +7,14 @@
   support code for writing offline crash dumps.
 
   - Helpers for locating the partition where the dump should be written.
+  - Helpers for executing the "OfflineDumpCollect.efi" application.
   - Helpers for reading Windows-defined UEFI variables related to offline crash dumps.
-  - Helper for collecting a dump (function `OfflineDumpCollect`).
+
+- **[OfflineDumpCollectLib](OfflineDumpPkg/Include/Library/OfflineDumpCollectLib.h)** --
+  static library that implements crash dump collection.
+
+- **[Redistributable](OfflineDumpPkg/Application/OfflineDumpCollect.inf)** --
+  application binary "OfflineDumpCollect.efi" that implements crash dump collection.
 
 - **[Sample](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
   crash dump using `OfflineDumpCollect`.
@@ -88,6 +94,7 @@ If using EmulatorPkg to test the application, you'll probably want to configure 
 Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sample application.
 
 - Under `[LibraryClasses]`, add: `OfflineDumpLib|OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
+- Under `[LibraryClasses]`, add: `OfflineDumpCollectLib|OfflineDumpPkg/Library/OfflineDumpCollectLib/OfflineDumpCollectLib.inf`
 - Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
 - Optional: Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
@@ -122,14 +129,11 @@ these bugs have been fixed. You may encounter hangs or errors if using an old ve
 
 ## Future Directions
 
-At present, `OfflineDumpCollect` is a function, and you link with `OfflineDumpLib` to call it.
-
-In the future, `OfflineDumpCollect` will probably be moved into a separate binary,
-the `OfflineDumpCollect.efi` application. Then to call it, you would:
-
-1. Add your `OFFLINE_DUMP_PROVIDER_PROTOCOL` instance to the EFI handle table.
-2. Run the `OfflineDumpCollect.efi` application.
-3. Remove your `OFFLINE_DUMP_PROVIDER_PROTOCOL` instance from the EFI handle table.
+At present, `OfflineDumpCollect` is available as a function in
+OfflineDumpCollectLib or as the binary application `OfflineDumpCollect.efi`. In
+the future, OfflineDumpCollectLib will no longer be available.  Users should
+transition to using the `OfflineDumpCollect.efi` binary application and invoking
+it using an `OfflineDumpCollectExecute` helper function.
 
 ## Contributing
 
