@@ -5,54 +5,55 @@ Microsoft Offline Dump - Functions for working with an Offline Dump.
 #ifndef _included_Library_OfflineDumpLib_h
 #define _included_Library_OfflineDumpLib_h
 
+#include <Uefi/UefiBaseType.h>
 #include <Protocol/OfflineDumpProvider.h>
 #include <Protocol/DevicePath.h>
 
 /**
-Launches OfflineDumpCollect.efi (located using device path) to collect an offline dump
+Launches OfflineDumpWrite.efi (located using device path) to write an offline dump
 using information from the specified provider.
 
 This function publishes the specified protocol, launches the application specified by
-pOfflineDumpCollectPath (assumed to be the path to OfflineDumpCollect.efi), and then
+pOfflineDumpWritePath (assumed to be the path to OfflineDumpWrite.efi), and then
 un-publishes the protocol.
 
 Specifically, it does the following:
 
-- LoadImage(FALSE, ParentImageHandle, pOfflineDumpCollectPath, NULL, 0, &CollectImageHandle);
-- InstallProtocolInterface(CollectImageHandle, ..., pProviderProtocol);
-- StartImage(CollectImageHandle, NULL, NULL);
+- LoadImage(FALSE, ParentImageHandle, pOfflineDumpWritePath, NULL, 0, &WriteImageHandle);
+- InstallProtocolInterface(WriteImageHandle, ..., pProviderProtocol);
+- StartImage(WriteImageHandle, NULL, NULL);
 - UninstallProtocolInterface(ParentImageHandle, ..., pProviderProtocol);
-- UnloadImage(CollectImageHandle);
+- UnloadImage(WriteImageHandle);
 **/
 EFI_STATUS
-OfflineDumpCollectExecutePath (
+OfflineDumpWriteExecutePath (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL  *pProviderProtocol,
   IN EFI_HANDLE                      ParentImageHandle,
-  IN EFI_DEVICE_PATH_PROTOCOL        *pOfflineDumpCollectPath
+  IN EFI_DEVICE_PATH_PROTOCOL        *pOfflineDumpWritePath
   );
 
 /**
-Launches OfflineDumpCollect.efi (previously loaded into memory) to collect an offline dump
+Launches OfflineDumpWrite.efi (previously loaded into memory) to write an offline dump
 using information from the specified provider.
 
 This function publishes the specified protocol, launches the application specified by
-pOfflineDumpCollectSourceBuffer (assumed to the contents of OfflineDumpCollect.efi), and
+pOfflineDumpWriteSourceBuffer (assumed to the contents of OfflineDumpWrite.efi), and
 then un-publishes the protocol.
 
 Specifically, it does the following:
 
-- LoadImage(FALSE, ParentImageHandle, NULL, pOfflineDumpCollectPath, OfflineDumpCollectSourceSize, &CollectImageHandle);
-- InstallProtocolInterface(CollectImageHandle, ..., pProviderProtocol);
-- StartImage(CollectImageHandle, NULL, NULL);
+- LoadImage(FALSE, ParentImageHandle, NULL, pOfflineDumpWritePath, OfflineDumpWriteSourceSize, &WriteImageHandle);
+- InstallProtocolInterface(WriteImageHandle, ..., pProviderProtocol);
+- StartImage(WriteImageHandle, NULL, NULL);
 - UninstallProtocolInterface(ParentImageHandle, ..., pProviderProtocol);
-- UnloadImage(CollectImageHandle);
+- UnloadImage(WriteImageHandle);
 **/
 EFI_STATUS
-OfflineDumpCollectExecuteMemory (
+OfflineDumpWriteExecuteMemory (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL  *pProviderProtocol,
   IN EFI_HANDLE                      ParentImageHandle,
-  IN VOID                            *pOfflineDumpCollectSourceBuffer,
-  IN UINTN                           OfflineDumpCollectSourceSize
+  IN VOID                            *pOfflineDumpWriteSourceBuffer,
+  IN UINTN                           OfflineDumpWriteSourceSize
   );
 
 /**

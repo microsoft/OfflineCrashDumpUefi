@@ -6,32 +6,32 @@
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
 static EFI_STATUS
-OfflineDumpCollectExecute (
+OfflineDumpWriteExecute (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL  *pProviderProtocol,
   IN EFI_HANDLE                      ParentImageHandle,
-  IN EFI_DEVICE_PATH_PROTOCOL        *pOfflineDumpCollectPath   OPTIONAL,
-  IN VOID                            *pOfflineDumpCollectSourceBuffer OPTIONAL,
-  IN UINTN                           OfflineDumpCollectSourceSize
+  IN EFI_DEVICE_PATH_PROTOCOL        *pOfflineDumpWritePath   OPTIONAL,
+  IN VOID                            *pOfflineDumpWriteSourceBuffer OPTIONAL,
+  IN UINTN                           OfflineDumpWriteSourceSize
   )
 {
   EFI_STATUS  Status;
-  EFI_HANDLE  CollectImageHandle = NULL;
+  EFI_HANDLE  WriteImageHandle = NULL;
 
   Status = gBS->LoadImage (
                            FALSE,
                            ParentImageHandle,
-                           pOfflineDumpCollectPath,
-                           pOfflineDumpCollectSourceBuffer,
-                           OfflineDumpCollectSourceSize,
-                           &CollectImageHandle
+                           pOfflineDumpWritePath,
+                           pOfflineDumpWriteSourceBuffer,
+                           OfflineDumpWriteSourceSize,
+                           &WriteImageHandle
                            );
   if (EFI_ERROR (Status)) {
-    DEBUG_PRINT (DEBUG_ERROR, "LoadImage(OfflineDumpCollect.efi) failed (%r)\n", Status);
+    DEBUG_PRINT (DEBUG_ERROR, "LoadImage(OfflineDumpWrite.efi) failed (%r)\n", Status);
     return Status;
   }
 
   Status = gBS->InstallProtocolInterface (
-                                          &CollectImageHandle,
+                                          &WriteImageHandle,
                                           &gOfflineDumpProviderProtocolGuid,
                                           EFI_NATIVE_INTERFACE,
                                           pProviderProtocol
@@ -41,32 +41,32 @@ OfflineDumpCollectExecute (
     goto Done;
   }
 
-  Status = gBS->StartImage (CollectImageHandle, NULL, NULL);
-  gBS->UninstallProtocolInterface (CollectImageHandle, &gOfflineDumpProviderProtocolGuid, pProviderProtocol);
+  Status = gBS->StartImage (WriteImageHandle, NULL, NULL);
+  gBS->UninstallProtocolInterface (WriteImageHandle, &gOfflineDumpProviderProtocolGuid, pProviderProtocol);
 
 Done:
 
-  gBS->UnloadImage (CollectImageHandle);
+  gBS->UnloadImage (WriteImageHandle);
   return Status;
 }
 
 EFI_STATUS
-OfflineDumpCollectExecutePath (
+OfflineDumpWriteExecutePath (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL  *pProviderProtocol,
   IN EFI_HANDLE                      ParentImageHandle,
-  IN EFI_DEVICE_PATH_PROTOCOL        *pOfflineDumpCollectPath
+  IN EFI_DEVICE_PATH_PROTOCOL        *pOfflineDumpWritePath
   )
 {
-  return OfflineDumpCollectExecute (pProviderProtocol, ParentImageHandle, pOfflineDumpCollectPath, NULL, 0);
+  return OfflineDumpWriteExecute (pProviderProtocol, ParentImageHandle, pOfflineDumpWritePath, NULL, 0);
 }
 
 EFI_STATUS
-OfflineDumpCollectExecuteMemory (
+OfflineDumpWriteExecuteMemory (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL  *pProviderProtocol,
   IN EFI_HANDLE                      ParentImageHandle,
-  IN VOID                            *pOfflineDumpCollectSourceBuffer,
-  IN UINTN                           OfflineDumpCollectSourceSize
+  IN VOID                            *pOfflineDumpWriteSourceBuffer,
+  IN UINTN                           OfflineDumpWriteSourceSize
   )
 {
-  return OfflineDumpCollectExecute (pProviderProtocol, ParentImageHandle, NULL, pOfflineDumpCollectSourceBuffer, OfflineDumpCollectSourceSize);
+  return OfflineDumpWriteExecute (pProviderProtocol, ParentImageHandle, NULL, pOfflineDumpWriteSourceBuffer, OfflineDumpWriteSourceSize);
 }

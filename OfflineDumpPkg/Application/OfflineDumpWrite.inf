@@ -1,4 +1,4 @@
-# Application that collects an offline dump.
+# Application that writes an offline dump.
 # Obtains dump parameters via LocateProtocol(gOfflineDumpProviderProtocolGuid).
 # Status is reported via DebugLib.
 # Requires RngDxe for secure random numbers.
@@ -6,15 +6,15 @@
 
   INF_VERSION                    = 0x00010005
   UEFI_SPECIFICATION_VERSION     = 0x0002001E
-  BASE_NAME                      = OfflineDumpCollect
+  BASE_NAME                      = OfflineDumpWrite
   VERSION_STRING                 = 0.1
-  FILE_GUID                      = 00f258e4-1a26-4f97-8d42-340a388a982f
+  FILE_GUID                      = 88d2ca98-f98b-44ff-b02e-8ab10072a5a5
   MODULE_TYPE                    = UEFI_APPLICATION
   ENTRY_POINT                    = UefiMain
 
 [Sources]
 
-  OfflineDumpCollect.c
+  OfflineDumpWrite.c
 
 [Packages]
 
@@ -26,7 +26,7 @@
 [LibraryClasses]
 
   OfflineDumpLib
-  OfflineDumpCollectLib
+  OfflineDumpWriterLib
 
   BaseMemoryLib
   DebugLib

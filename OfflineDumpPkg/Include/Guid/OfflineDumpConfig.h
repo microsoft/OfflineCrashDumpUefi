@@ -5,8 +5,6 @@ Microsoft Offline Dump - Definitions for communication between firmware and OS.
 #ifndef _included_Guid_OfflineDumpConfig_h
 #define _included_Guid_OfflineDumpConfig_h
 
-#include <Uefi/UefiBaseType.h>
-
 //
 // OFFLINE_DUMP_CONFIGURATION_TABLE used to pass information from the firmware to the OS.
 //
@@ -57,15 +55,15 @@ typedef struct {
   // AES128_CTR: The firmware supports encrypting the dump with AES128_CTR + RSAES_OAEP.
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS    OfflineMemoryDumpCapable;
 
-  // 0: Offline crash dump collection is disabled or not correctly configured.
-  // 1: The device is correctly configured for offline crash dump collection.
+  // 0: Offline crash dump generation is disabled or not correctly configured.
+  // 1: The device is correctly configured for offline crash dump generation.
   UINT32                                      OfflineMemoryDumpEnabled;
 
-  // 0: The most recent boot did not collect an offline crash dump.
-  // 1: The firmware has attempted offline crash dump collection after an abnormal reset.
+  // 0: The most recent boot did not generate an offline crash dump.
+  // 1: The most recent boot generated an offline crash dump due to an abnormal reset.
   UINT32                                      OfflineMemoryDumpExpected;
 
-  // Firmware-defined value indicating reason(s) that the firmware was unable to collect an
+  // Firmware-defined value indicating reason(s) that the firmware failed to generate an
   // offline crash dump after an abnormal reset.
   UINT32                                      OfflineDumpCreationErrors;
 } OFFLINE_DUMP_CONFIGURATION_TABLE_V3;

@@ -17,7 +17,7 @@
 [LibraryClasses]
 
   OfflineDumpLib|Include/Library/OfflineDumpLib.h
-  OfflineDumpCollectLib|Include/Library/OfflineDumpCollectLib.h
+  OfflineDumpWriterLib|Include/Library/OfflineDumpWriterLib.h
 
 [Guids]
 

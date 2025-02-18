@@ -74,7 +74,7 @@ MakeSectionName (
 }
 
 static OFFLINE_DUMP_END_INFO
-OfflineDumpWrite (
+OfflineDumpWriteWithDumpInfo (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider,
   IN OFFLINE_DUMP_INFO const               *pDumpInfo
   )
@@ -150,10 +150,10 @@ OfflineDumpWrite (
   // DUMP_REASON
 
   ZeroMem (&Information, sizeof (Information));
-  Information.DumpReason.Parameter1 = pDumpInfo->DumpReasonParameter1;
-  Information.DumpReason.Parameter2 = pDumpInfo->DumpReasonParameter2;
-  Information.DumpReason.Parameter3 = pDumpInfo->DumpReasonParameter3;
-  Information.DumpReason.Parameter4 = pDumpInfo->DumpReasonParameter4;
+  Information.DumpReason.Parameter1 = pDumpInfo->DumpReasonParameters[0];
+  Information.DumpReason.Parameter2 = pDumpInfo->DumpReasonParameters[1];
+  Information.DumpReason.Parameter3 = pDumpInfo->DumpReasonParameters[2];
+  Information.DumpReason.Parameter4 = pDumpInfo->DumpReasonParameters[3];
 
   EndInfo.Status = OfflineDumpWriterWriteSection (
                                                   pDumpWriter,
@@ -220,7 +220,7 @@ OfflineDumpWrite (
                                                 );
     ProgressInfo.WrittenBytes += pSection->DataSize;
     if (EFI_ERROR (EndInfo.Status)) {
-      DEBUG_PRINT (DEBUG_WARN, "ReportProgress returned error (%r), stopping collection\n", EndInfo.Status);
+      DEBUG_PRINT (DEBUG_WARN, "ReportProgress returned error (%r), stopping generation\n", EndInfo.Status);
       goto Done;
     }
 
@@ -290,7 +290,7 @@ Done:
 }
 
 EFI_STATUS
-OfflineDumpCollect (
+OfflineDumpWrite (
   IN OFFLINE_DUMP_PROVIDER_PROTOCOL const  *pProvider
   )
 {
@@ -325,7 +325,7 @@ OfflineDumpCollect (
 
   {
     OFFLINE_DUMP_BEGIN_INFO  BeginInfo = { 0 };
-    BeginInfo.CollectorRevision  = OfflineDumpProviderProtocolRevisionCurrent;
+    BeginInfo.WriterRevision  = OfflineDumpProviderProtocolRevisionCurrent;
     BeginInfo.UseCapabilityFlags = UseCapabilityFlags;
 
     EndInfo.Status = pProvider->Begin (
@@ -381,7 +381,7 @@ OfflineDumpCollect (
   }
 
   if (DumpInfo.Options.ForceDumpAllowed) {
-    DEBUG_PRINT (DEBUG_WARN, "Forcing dump collection (ignoring SecureOfflineDumpControl)\n");
+    DEBUG_PRINT (DEBUG_WARN, "Forcing dump generation (ignoring SecureOfflineDumpControl)\n");
   }
 
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
@@ -423,12 +423,12 @@ OfflineDumpCollect (
 
         // Redaction needed. Configuration data required.
         if ((DumpInfo.pSecureOfflineDumpConfiguration == NULL) || (DumpInfo.SecureOfflineDumpConfigurationSize == 0)) {
-          DEBUG_PRINT (DEBUG_ERROR, "Redaction required but SecureOfflineDumpConfiguration not present. Dump cannot be collected.\n");
+          DEBUG_PRINT (DEBUG_ERROR, "Redaction required but SecureOfflineDumpConfiguration not present. Dump cannot be written.\n");
           EndInfo.Status = EFI_INVALID_PARAMETER;
           goto Done;
         }
 
-        DEBUG_PRINT (DEBUG_ERROR, "SecureOfflineDumpConfiguration parsing not yet implemented. Dump cannot be collected.\n");
+        DEBUG_PRINT (DEBUG_ERROR, "SecureOfflineDumpConfiguration parsing not yet implemented. Dump cannot be written.\n");
         EndInfo.Status = EFI_UNSUPPORTED;
         goto Done;
 
@@ -447,7 +447,7 @@ OfflineDumpCollect (
 
   // Write the dump
 
-  EndInfo = OfflineDumpWrite (pProvider, &DumpInfo);
+  EndInfo = OfflineDumpWriteWithDumpInfo (pProvider, &DumpInfo);
 
 Done:
 

@@ -2,11 +2,11 @@
 
   INF_VERSION                    = 0x00010005
   UEFI_SPECIFICATION_VERSION     = 0x0002001E
-  BASE_NAME                      = OfflineDumpCollectLib
+  BASE_NAME                      = OfflineDumpWriterLib
   VERSION_STRING                 = 0.1
-  FILE_GUID                      = 94a8e3ee-7425-4e70-a6c8-3d22bec4b4fa
+  FILE_GUID                      = 600a8132-12dc-4f8b-af68-171b14a780bf
   MODULE_TYPE                    = DXE_DRIVER
-  LIBRARY_CLASS                  = OfflineDumpCollectLib|DXE_DRIVER DXE_CORE UEFI_APPLICATION UEFI_DRIVER
+  LIBRARY_CLASS                  = OfflineDumpWriterLib|DXE_DRIVER DXE_CORE UEFI_APPLICATION UEFI_DRIVER
 
 [Sources]
 

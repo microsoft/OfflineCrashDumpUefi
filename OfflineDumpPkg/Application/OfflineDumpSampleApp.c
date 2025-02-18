@@ -45,13 +45,13 @@ CopyHelloDataCallback (
   // e.g. it could call into a coprocessor to copy the data.
   //
   // In real code, you should not use a callback if you are just performing a normal CopyMem.
-  // If you pass NULL as the callback, the collector will perform an optimized copy as if by CopyMem.
+  // If you pass NULL as the callback, the writer will perform an optimized copy as if by CopyMem.
   CopyMem (pDestinationPos, (UINT8 *)pDataStart + Offset, Size);
   return TRUE;
 }
 
 // This is the data we need for our implementation of OFFLINE_DUMP_PROVIDER_PROTOCOL.
-// We pass this protocol implementation to the collector.
+// We pass this protocol implementation to the writer.
 typedef struct {
   // Protocol implementation must always start with the protocol interface:
 
@@ -64,7 +64,7 @@ typedef struct {
 } SAMPLE_DUMP_PROVIDER;
 
 // Simple implementation of the Begin callback for the OfflineDumpProviderProtocol.
-// This is called by the collector to get dump configuration and dump data.
+// This is called by the writer to get dump configuration and dump data.
 // It needs to fill in the pDumpInfo information.
 static EFI_STATUS
 SampleBegin (
@@ -81,8 +81,8 @@ SampleBegin (
   // BeginInfo holds the information we copy from pBeginInfo.
   OFFLINE_DUMP_BEGIN_INFO  BeginInfo = { 0 };
 
-  // Copy the collector's BeginInfo buffer to our local BeginInfo.
-  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  // Copy the writer's BeginInfo buffer to our local BeginInfo.
+  // In case of size mismatch between us and the writer, copy the smaller of the two.
   CopyMem (&BeginInfo, pBeginInfo, MIN (BeginInfoSize, sizeof (BeginInfo)));
 
   // Begin performs any work needed to prepare for the dump. In this case, most of the work
@@ -112,8 +112,8 @@ SampleBegin (
 
 Done:
 
-  // Copy our DumpInfo to the collector's DumpInfo buffer.
-  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  // Copy our DumpInfo to the writer's DumpInfo buffer.
+  // In case of size mismatch between us and the writer, copy the smaller of the two.
   CopyMem (pDumpInfo, &pThis->DumpInfo, MIN (DumpInfoSize, sizeof (pThis->DumpInfo)));
 
   Print (L"Begin: %r\n", Status);
@@ -121,7 +121,7 @@ Done:
 }
 
 // Simple implementation of the End callback for the OfflineDumpProviderProtocol.
-// This is called by the collector to signal that dump collection has ended.
+// This is called by the writer to signal that dump generation has ended.
 // It should perform cleanup as needed.
 // This will be called if and only if the Begin callback returned successfully.
 static VOID
@@ -133,8 +133,8 @@ SampleEnd (
 {
   SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
 
-  // Copy the collector's EndInfo buffer to our local EndInfo.
-  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  // Copy the writer's EndInfo buffer to our local EndInfo.
+  // In case of size mismatch between us and the writer, copy the smaller of the two.
   CopyMem (&pThis->EndInfo, pEndInfo, MIN (EndInfoSize, sizeof (pThis->EndInfo)));
 
   pThis->DumpInfo.BlockDevice = NULL;          // Cleanup as needed.
@@ -146,7 +146,7 @@ SampleEnd (
 }
 
 // Simple implementation of the ReportProgress callback for the OfflineDumpProviderProtocol.
-// This is called periodically by the collector to give the provider a chance to update progress UI.
+// This is called periodically by the writer to give the provider a chance to update progress UI.
 // This will only be called if the Begin callback returned successfully.
 static EFI_STATUS
 SampleReportProgress (
@@ -160,21 +160,21 @@ SampleReportProgress (
   // ProgressInfo holds the information we copy from pProgressInfo.
   OFFLINE_DUMP_PROGRESS_INFO  ProgressInfo = { 0 };
 
-  // Copy the collector's ProgressInfo buffer to our local ProgressInfo.
-  // In case of size mismatch between us and the collector, copy the smaller of the two.
+  // Copy the writer's ProgressInfo buffer to our local ProgressInfo.
+  // In case of size mismatch between us and the writer, copy the smaller of the two.
   CopyMem (&ProgressInfo, pProgressInfo, MIN (ProgressInfoSize, sizeof (ProgressInfo)));
 
   // This implementation just prints the progress.
   // A more complex implementation might update a progress bar or other UI.
   Print (L"ReportProgress: %llu/%llu\n", (llu_t)ProgressInfo.WrittenBytes, (llu_t)ProgressInfo.ExpectedBytes);
-  return EFI_SUCCESS; // If this returns an error, the collector will stop writing the dump.
+  return EFI_SUCCESS; // If this returns an error, the writer will stop writing the dump.
 }
 
-// Create a device path that points to OfflineDumpCollect.efi.
-// For demonstration purposes, look for OfflineDumpCollect.efi in the same directory as
+// Create a device path that points to OfflineDumpWriter.efi.
+// For demonstration purposes, look for OfflineDumpWrite.efi in the same directory as
 // this sample app.
 static EFI_DEVICE_PATH_PROTOCOL *
-SampleGetPathToOfflineDumpCollect (
+SampleGetPathToOfflineDumpWrite (
   IN EFI_HANDLE  ImageHandle
   )
 {
@@ -203,27 +203,27 @@ SampleGetPathToOfflineDumpCollect (
     ThisImageDirEnd -= 1;
   }
 
-  // Create a text path that points to OfflineDumpCollect.efi in the running app's directory.
-  CHAR16  *pOfflineDumpCollectPathText = CatSPrint (NULL, L"%.*sOfflineDumpCollect.efi", (UINT32)ThisImageDirEnd, pThisImagePathText);
+  // Create a text path that points to OfflineDumpWrite.efi in the running app's directory.
+  CHAR16  *pOfflineDumpWritePathText = CatSPrint (NULL, L"%.*sOfflineDumpWrite.efi", (UINT32)ThisImageDirEnd, pThisImagePathText);
   FreePool (pThisImagePathText);
   pThisImagePathText = NULL;
-  if (pOfflineDumpCollectPathText == NULL) {
-    Print (L"CatSPrint(OfflineDumpCollectPath) failed\n");
+  if (pOfflineDumpWritePathText == NULL) {
+    Print (L"CatSPrint(OfflineDumpWritePath) failed\n");
     return NULL;
   }
 
-  Print (L"Running \"%s\"\n", pOfflineDumpCollectPathText);
+  Print (L"Running \"%s\"\n", pOfflineDumpWritePathText);
 
-  // Get device path of OfflineDumpCollect.efi in the running app's directory.
-  EFI_DEVICE_PATH_PROTOCOL  *pOfflineDumpCollectPath = ConvertTextToDevicePath (pOfflineDumpCollectPathText);
-  FreePool (pOfflineDumpCollectPathText);
-  pOfflineDumpCollectPathText = NULL;
-  if (pOfflineDumpCollectPath == NULL) {
-    Print (L"ConvertTextToDevicePath(OfflineDumpCollectPath) failed\n");
+  // Get device path of OfflineDumpWrite.efi in the running app's directory.
+  EFI_DEVICE_PATH_PROTOCOL  *pOfflineDumpWritePath = ConvertTextToDevicePath (pOfflineDumpWritePathText);
+  FreePool (pOfflineDumpWritePathText);
+  pOfflineDumpWritePathText = NULL;
+  if (pOfflineDumpWritePath == NULL) {
+    Print (L"ConvertTextToDevicePath(OfflineDumpWritePath) failed\n");
     return NULL;
   }
 
-  return pOfflineDumpCollectPath;
+  return pOfflineDumpWritePath;
 }
 
 EFI_STATUS EFIAPI
@@ -336,61 +336,66 @@ UefiMain (
   // Create our provider.
 
   SAMPLE_DUMP_PROVIDER  SampleDumpProvider = {
-    // Provider public fields (used by the collector):
+    // Provider public fields (used by the writer):
     .Protocol.Revision       = OfflineDumpProviderProtocolRevision_1_0,
     .Protocol.Begin          = SampleBegin,
     .Protocol.ReportProgress = SampleReportProgress,
     .Protocol.End            = SampleEnd,
 
     // Provider private fields (used by the callbacks):
-    .DumpInfo.BlockDevice                        = NULL, // Filled in by SampleBegin.
-    .DumpInfo.pSections                          = Sections,
-    .DumpInfo.SectionCount                       = SectionsCount,
-    .DumpInfo.Architecture                       = RAW_DUMP_ARCHITECTURE_ARM64,
-    .DumpInfo.pCpuContexts                       = CpuContexts,
-    .DumpInfo.CpuContextCount                    = CpuContextCount,
-    .DumpInfo.CpuContextSize                     = sizeof (CpuContexts[0]),
-    .DumpInfo.pVendor                            = "Vend",     // TODO: Use real vendor.
-    .DumpInfo.pPlatform                          = "Platform", // TODO: Use real platform.
-    .DumpInfo.DumpReasonParameter1               = 0x12345678, // TODO: Use real dump bucket parameters.
-    .DumpInfo.DumpReasonParameter2               = 0xA,        // TODO: Use real dump bucket parameters.
-    .DumpInfo.DumpReasonParameter3               = 0x1234,     // TODO: Use real dump bucket parameters.
-    .DumpInfo.DumpReasonParameter4               = 0x0,        // TODO: Use real dump bucket parameters.
-    .DumpInfo.Flags                              = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,
-    .DumpInfo.pSecureOfflineDumpConfiguration    = NULL,                                 // TODO: Use real configuration ptr from trusted firmware (SMC).
-    .DumpInfo.SecureOfflineDumpConfigurationSize = 0,                                    // TODO: Use real configuration size from trusted firmware (SMC).
-    .DumpInfo.SecureOfflineDumpControl           = OfflineDumpControlDumpAllowed,        // TODO: Use real control value from trusted firmware (SMC).
+    .DumpInfo                             = {
+      .BlockDevice          = NULL, // Filled in by SampleBegin.
+      .pSections            = Sections,
+      .SectionCount         = SectionsCount,
+      .Architecture         = RAW_DUMP_ARCHITECTURE_ARM64,
+      .pCpuContexts         = CpuContexts,
+      .CpuContextCount      = CpuContextCount,
+      .CpuContextSize       = sizeof (CpuContexts[0]),
+      .pVendor              = "Vend",     // TODO: Use real vendor.
+      .pPlatform            = "Platform", // TODO: Use real platform.
+      .DumpReasonParameters =             // TODO: Use real dump bucket parameters.
+      {
+        0x12345678,
+        0xA,
+        0x1234,
+        0x0,
+      },
+      .Flags                              = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED, // TODO: Set this only if DDR was flushed before warm boot.
+      .pSecureOfflineDumpConfiguration    = NULL,                                 // TODO: Use real configuration ptr from trusted firmware (SMC).
+      .SecureOfflineDumpConfigurationSize = 0,                                    // TODO: Use real configuration size from trusted firmware (SMC).
+      .SecureOfflineDumpControl           = OfflineDumpControlDumpAllowed,        // TODO: Use real control value from trusted firmware (SMC).
+    },
   };
 
-  // Run OfflineDumpCollect.efi to Collect the dump.
-  // Alternative would be to link against OfflineDumpCollectLib and call OfflineDumpCollect(&Protocol).
+  // Run OfflineDumpWrite.efi to write the dump.
+  // Alternative would be to link against OfflineDumpWriterLib and call OfflineDumpWrite(&Protocol).
 
-  EFI_DEVICE_PATH_PROTOCOL  *pOfflineDumpCollectPath = SampleGetPathToOfflineDumpCollect (ImageHandle);
-  if (pOfflineDumpCollectPath == NULL) {
+  EFI_DEVICE_PATH_PROTOCOL  *pOfflineDumpWritePath = SampleGetPathToOfflineDumpWrite (ImageHandle);
+  if (pOfflineDumpWritePath == NULL) {
     Status = EFI_OUT_OF_RESOURCES;
     goto Done;
   }
 
   UINT64 const  TimeStart = GetPerformanceCounter ();
-  Status = OfflineDumpCollectExecutePath (
-                                          &SampleDumpProvider.Protocol,
-                                          ImageHandle,
-                                          pOfflineDumpCollectPath
-                                          );
+  Status = OfflineDumpWriteExecutePath (
+                                        &SampleDumpProvider.Protocol,
+                                        ImageHandle,
+                                        pOfflineDumpWritePath
+                                        );
   UINT64 const  TimeEnd = GetPerformanceCounter ();
-  FreePool (pOfflineDumpCollectPath);
-  pOfflineDumpCollectPath = NULL;
+  FreePool (pOfflineDumpWritePath);
+  pOfflineDumpWritePath = NULL;
 
   // Report results.
 
   if (EFI_ERROR (Status)) {
     Print (
-           L"OfflineDumpCollect failed: %r\n",
+           L"OfflineDumpWrite failed: %r\n",
            Status
            );
   } else if (SampleDumpProvider.EndInfo.SizeRequired > SampleDumpProvider.EndInfo.SizeAvailable) {
     Print (
-           L"OfflineDumpCollect truncated: %lluKB required, %lluKB available\n",
+           L"OfflineDumpWrite truncated: %lluKB required, %lluKB available\n",
            (llu_t)SampleDumpProvider.EndInfo.SizeRequired / 1024,
            (llu_t)SampleDumpProvider.EndInfo.SizeAvailable / 1024
            );
@@ -398,7 +403,7 @@ UefiMain (
     UINT64 const  TimeNS             = GetTimeInNanoSecond (TimeEnd - TimeStart);
     UINT64 const  KilobytesPerSecond = SampleDumpProvider.EndInfo.SizeRequired * (1000000000 / 1024) / (TimeNS ? TimeNS : 1);
     Print (
-           L"OfflineDumpCollect succeeded: %lluKB / %llus = %llu KB/s\n",
+           L"OfflineDumpWrite succeeded: %lluKB / %llus = %llu KB/s\n",
            (llu_t)SampleDumpProvider.EndInfo.SizeRequired / 1024,
            (llu_t)TimeNS / 1000000000,
            (llu_t)KilobytesPerSecond
