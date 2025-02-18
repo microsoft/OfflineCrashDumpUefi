@@ -16,6 +16,7 @@
   # OfflineDumpPkg
 
   OfflineDumpLib              |OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
+  OfflineDumpCollectLib       |OfflineDumpPkg/Library/OfflineDumpCollectLib/OfflineDumpCollectLib.inf
 
   # CryptoPkg
 
@@ -57,8 +58,10 @@
 [Components]
 
   OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf
+  OfflineDumpPkg/Library/OfflineDumpCollectLib/OfflineDumpCollectLib.inf
 
   OfflineDumpPkg/Application/OfflineDumpSampleApp.inf
+  OfflineDumpPkg/Application/OfflineDumpCollect.inf
   OfflineDumpPkg/Application/OfflineDumpBench.inf
 
 [PcdsFixedAtBuild]

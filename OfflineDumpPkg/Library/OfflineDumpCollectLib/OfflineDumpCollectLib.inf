@@ -2,22 +2,23 @@
 
   INF_VERSION                    = 0x00010005
   UEFI_SPECIFICATION_VERSION     = 0x0002001E
-  BASE_NAME                      = OfflineDumpLib
+  BASE_NAME                      = OfflineDumpCollectLib
   VERSION_STRING                 = 0.1
-  FILE_GUID                      = bca01068-c3e1-41f7-808b-4aab6cbd5d65
+  FILE_GUID                      = 94a8e3ee-7425-4e70-a6c8-3d22bec4b4fa
   MODULE_TYPE                    = DXE_DRIVER
-  LIBRARY_CLASS                  = OfflineDumpLib|DXE_DRIVER DXE_CORE UEFI_APPLICATION UEFI_DRIVER
+  LIBRARY_CLASS                  = OfflineDumpCollectLib|DXE_DRIVER DXE_CORE UEFI_APPLICATION UEFI_DRIVER
 
 [Sources]
 
-  Execute.c
-  Partition.c
-  Variables.c
+  Collect.c
+  Encryptor.c
+  Writer.c
 
 [Packages]
 
   OfflineDumpPkg/OfflineDumpPkg.dec
   MdePkg/MdePkg.dec
+  CryptoPkg/CryptoPkg.dec
 
 [LibraryClasses]
 
@@ -29,13 +30,10 @@
   SynchronizationLib
   UefiBootServicesTableLib
 
-[Guids]
-
-  gOfflineDumpPartitionTypeGuid
-  gOfflineDumpVariableGuid
+  BaseCryptLib
+  OpensslLib
 
 [Protocols]
 
   gEfiBlockIoProtocolGuid           ## CONSUMES
-  gEfiPartitionInfoProtocolGuid     ## CONSUMES
-  gOfflineDumpProviderProtocolGuid  ## CONSUMES
+  gEfiBlockIo2ProtocolGuid          ## CONSUMES

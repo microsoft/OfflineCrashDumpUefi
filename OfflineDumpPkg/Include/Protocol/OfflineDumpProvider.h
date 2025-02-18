@@ -21,7 +21,7 @@
   - OFFLINE_DUMP_PROVIDER_END (function pointer)
   - OFFLINE_DUMP_DATA_COPY (function pointer)
 
-  TODO: Better names for structures, OfflineDumpCollect?
+  TODO: Better names for structures, OfflineDumpCollect.efi?
 **/
 
 #ifndef _included_Protocol_OfflineDumpProvider_h
