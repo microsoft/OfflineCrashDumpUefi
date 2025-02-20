@@ -22,7 +22,7 @@
 [LibraryClasses]
 
   OfflineDumpLib
-  OfflineDumpCollectLib
+  OfflineDumpWriterLib
 
   BaseMemoryLib
   DebugLib

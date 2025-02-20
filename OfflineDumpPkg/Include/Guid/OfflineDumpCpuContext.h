@@ -5,8 +5,6 @@ Microsoft Offline Dump - Definitions for CPU context information.
 #ifndef _included_Guid_OfflineDumpCpuContext_h
 #define _included_Guid_OfflineDumpCpuContext_h
 
-#include <Uefi/UefiBaseType.h>
-
 #ifdef DUMMYSTRUCTNAME
 #define CPU_CONTEXT_DUMMYSTRUCTNAME  DUMMYSTRUCTNAME
 #else

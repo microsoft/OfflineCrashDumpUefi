@@ -5,7 +5,6 @@ Microsoft Offline Dump - Definitions for dump file format.
 #ifndef _included_Guid_OfflineDumpHeaders_h
 #define _included_Guid_OfflineDumpHeaders_h
 
-#include <Uefi/UefiBaseType.h>
 #pragma pack(push,1)
 
 // Signature for the raw dump file header.

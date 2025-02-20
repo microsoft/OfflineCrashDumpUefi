@@ -5,8 +5,6 @@ Microsoft Offline Dump - Definitions for dump encryption.
 #ifndef _included_Guid_OfflineDumpEncryption_h
 #define _included_Guid_OfflineDumpEncryption_h
 
-#include <Uefi/UefiBaseType.h>
-
 // Signature for the encrypted dump header.
 // 8 Bytes - "Enc_Dmp!" - in hex, LittleEndian order
 #define ENC_DUMP_HEADER_SIGNATURE  (UINT64)(0x21706D445F636E45)

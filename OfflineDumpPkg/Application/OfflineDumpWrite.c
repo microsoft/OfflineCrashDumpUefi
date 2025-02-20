@@ -1,9 +1,9 @@
-#include <OfflineDumpCollectLib.h>
+#include <OfflineDumpWriterLib.h>
 #include <Uefi.h>
 #include <Library/DebugLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
-#define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a " fmt, "OfflineDumpCollect:", ##__VA_ARGS__)
+#define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a " fmt, "OfflineDumpWrite:", ##__VA_ARGS__)
 
 EFI_STATUS EFIAPI
 UefiMain (
@@ -22,7 +22,7 @@ UefiMain (
     goto Done;
   }
 
-  Status = OfflineDumpCollect (pProvider);
+  Status = OfflineDumpWrite (pProvider);
 
 Done:
 

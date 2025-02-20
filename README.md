@@ -7,17 +7,17 @@
   support code for writing offline crash dumps.
 
   - Helpers for locating the partition where the dump should be written.
-  - Helpers for executing the "OfflineDumpCollect.efi" application.
+  - Helpers for executing the "OfflineDumpWrite.efi" application.
   - Helpers for reading Windows-defined UEFI variables related to offline crash dumps.
 
-- **[OfflineDumpCollectLib](OfflineDumpPkg/Include/Library/OfflineDumpCollectLib.h)** --
-  static library that implements crash dump collection.
+- **[OfflineDumpWriterLib](OfflineDumpPkg/Include/Library/OfflineDumpWriterLib.h)** --
+  static library that implements crash dump generation.
 
-- **[Redistributable](OfflineDumpPkg/Application/OfflineDumpCollect.inf)** --
-  application binary "OfflineDumpCollect.efi" that implements crash dump collection.
+- **[Redistributable](OfflineDumpPkg/Application/OfflineDumpWrite.inf)** --
+  application binary "OfflineDumpWrite.efi" that implements crash dump generation.
 
 - **[Sample](OfflineDumpPkg/Application/OfflineDumpSampleApp.c)** -- sample shows how to generate an offline
-  crash dump using `OfflineDumpCollect`.
+  crash dump using `OfflineDumpWrite.efi`.
 
 ## EDK2 build environment (Windows)
 
@@ -94,8 +94,9 @@ If using EmulatorPkg to test the application, you'll probably want to configure 
 Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sample application.
 
 - Under `[LibraryClasses]`, add: `OfflineDumpLib|OfflineDumpPkg/Library/OfflineDumpLib/OfflineDumpLib.inf`
-- Under `[LibraryClasses]`, add: `OfflineDumpCollectLib|OfflineDumpPkg/Library/OfflineDumpCollectLib/OfflineDumpCollectLib.inf`
+- Under `[LibraryClasses]`, add: `OfflineDumpWriterLib|OfflineDumpPkg/Library/OfflineDumpWriterLib/OfflineDumpWriterLib.inf`
 - Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
+- Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpWrite.inf`
 - Optional: Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
     This allows you to treat `disk.dmg` directly as a `rawdump.bin` file without any kind of extraction step.
@@ -129,11 +130,11 @@ these bugs have been fixed. You may encounter hangs or errors if using an old ve
 
 ## Future Directions
 
-At present, `OfflineDumpCollect` is available as a function in
-OfflineDumpCollectLib or as the binary application `OfflineDumpCollect.efi`. In
-the future, OfflineDumpCollectLib will no longer be available.  Users should
-transition to using the `OfflineDumpCollect.efi` binary application and invoking
-it using an `OfflineDumpCollectExecute` helper function.
+At present, `OfflineDumpWrite` is available as a function in
+OfflineDumpWriterLib or as the binary application `OfflineDumpWrite.efi`. In
+the future, OfflineDumpWriterLib will no longer be available.  Users should
+transition to using the `OfflineDumpWrite.efi` binary application and invoking
+it using an `OfflineDumpWriteExecute` helper function.
 
 ## Contributing
 
