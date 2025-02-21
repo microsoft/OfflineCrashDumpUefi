@@ -36,8 +36,19 @@ OfflineDumpSectionSkipReason (
 {
   switch (pSection->Type) {
     case OfflineDumpSectionTypeDdrRange:
+      // DDR ranges should be full memory pages (page aligned and a multiple of page length).
+      // This restriction is not technically necessary, but it seems like a reasonable rule
+      // and it simplifies redaction.
+      if (pSection->DataSize % 4096 != 0) {
+        return "DataSize is not a multiple of 4096";
+      } else if (pSection->Information.DdrRange.Base % 4096 != 0) {
+        return "Information.DdrRange.Base is not a multiple of 4096";
+      }
+      break;
+
     case OfflineDumpSectionTypeSvSpecific:
       break;
+
     default:
       return "unsupported Type";
   }
