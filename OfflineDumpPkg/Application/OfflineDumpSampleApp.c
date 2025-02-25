@@ -243,7 +243,7 @@ UefiMain (
   UINT32  DescriptorVersion;
 
   // Get the memory map.
-  // TODO: Real crash dump will probably use a customized memory map to include carve-outs.
+  // TODO: Real crash dump will use a customized memory map to include carve-outs.
 
   Status = gBS->GetMemoryMap (&MemoryMapSize, (EFI_MEMORY_DESCRIPTOR *)MemoryMap, &MapKey, &DescriptorSize, &DescriptorVersion);
   if (Status != EFI_BUFFER_TOO_SMALL) {
@@ -292,6 +292,7 @@ UefiMain (
   // Prepare the sections array.
 
   UINT32  SectionsIndex = 0;
+  UINT64 DdrEnd = 0;
 
   // Prepare one SV_SPECIFIC section (HelloSection).
   // For demonstration purposes, use a callback to copy the data.
@@ -305,6 +306,7 @@ UefiMain (
   pSection->DataCopyCallback = CopyHelloDataCallback; // Demonstrate using a callback (normally you would set this to NULL).
 
   // Prepare the DDR_RANGE sections.
+  // TODO: Real crash dump will use a customized memory map to include carve-outs.
   for (UINT8 const *DescPos = MemoryMap; DescPos < MemoryMap + MemoryMapSize; DescPos += DescriptorSize) {
     EFI_MEMORY_DESCRIPTOR const  *Desc = (EFI_MEMORY_DESCRIPTOR const *)DescPos;
     if (Desc->Type != EfiConventionalMemory) {
@@ -316,6 +318,10 @@ UefiMain (
     pSection->Information.DdrRange.Base = Desc->PhysicalStart;
     pSection->pDataStart                = (void const *)(UINTN)Desc->PhysicalStart;
     pSection->DataSize                  = EFI_PAGES_TO_SIZE (Desc->NumberOfPages);
+
+    // DDR_RANGE sections must be specified in order of their start address and must not overlap.
+    ASSERT(DdrEnd <= Desc->PhysicalStart);
+    DdrEnd = Desc->PhysicalStart + EFI_PAGES_TO_SIZE (Desc->NumberOfPages);
   }
 
   ASSERT (SectionsCount == SectionsIndex);
