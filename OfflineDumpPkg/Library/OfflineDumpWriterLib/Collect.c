@@ -36,8 +36,20 @@ OfflineDumpSectionSkipReason (
 {
   switch (pSection->Type) {
     case OfflineDumpSectionTypeDdrRange:
+      // DDR ranges must be full memory pages (page aligned and a multiple of page length).
+      if (pSection->DataSize % 4096 != 0) {
+        return "DDR region DataSize is not a multiple of 4096";
+      } else if (pSection->Information.DdrRange.Base % 4096 != 0) {
+        return "Information.DdrRange.Base is not a multiple of 4096";
+      } else if (pSection->Information.DdrRange.Base + pSection->DataSize < pSection->Information.DdrRange.Base) {
+        return "DDR region Base + Size overflow";
+      }
+
+      break;
+
     case OfflineDumpSectionTypeSvSpecific:
       break;
+
     default:
       return "unsupported Type";
   }
@@ -295,6 +307,7 @@ OfflineDumpWrite (
   )
 {
   OFFLINE_DUMP_END_INFO  EndInfo = { 0 };
+  UINT64                 DdrEnd  = 0;
 
   // Validate pProvider
 
@@ -325,7 +338,7 @@ OfflineDumpWrite (
 
   {
     OFFLINE_DUMP_BEGIN_INFO  BeginInfo = { 0 };
-    BeginInfo.WriterRevision  = OfflineDumpProviderProtocolRevisionCurrent;
+    BeginInfo.WriterRevision     = OfflineDumpProviderProtocolRevisionCurrent;
     BeginInfo.UseCapabilityFlags = UseCapabilityFlags;
 
     EndInfo.Status = pProvider->Begin (
@@ -390,6 +403,22 @@ OfflineDumpWrite (
     CHAR8 const  *pSkipReason = OfflineDumpSectionSkipReason (pSection);
     if (pSkipReason != NULL) {
       DEBUG_PRINT (DEBUG_WARN, "DumpInfo.Sections[%u] skipped: %a\n", SectionIndex, pSkipReason);
+    }
+
+    if (pSection->Type == OfflineDumpSectionTypeDdrRange) {
+      if (pSection->Information.DdrRange.Base < DdrEnd) {
+        DEBUG_PRINT (
+                     DEBUG_ERROR,
+                     "DumpInfo.Sections[%u] Base address (%llX) is less than previous DDR section's End address (%llX). DDR sections must be specified in order of their start address.\n",
+                     SectionIndex,
+                     (UINT64)pSection->Information.DdrRange.Base,
+                     (UINT64)DdrEnd
+                     );
+        EndInfo.Status = EFI_INVALID_PARAMETER;
+        goto Done;
+      }
+
+      DdrEnd = pSection->Information.DdrRange.Base + pSection->DataSize;
     }
   }
 
