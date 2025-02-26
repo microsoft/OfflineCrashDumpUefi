@@ -4,24 +4,21 @@
   The ISV implements this protocol to provide dump information to the
   Offline Crash Dump writer and to configure writer behavior.
 
+  - OFFLINE_DUMP_PROVIDER_BEGIN (function pointer)
+  - OFFLINE_DUMP_PROVIDER_BEGIN_INFO (struct)
+  - OFFLINE_DUMP_PROVIDER_DATA_COPY (function pointer)
+  - OFFLINE_DUMP_PROVIDER_DUMP_INFO (struct)
+  - OFFLINE_DUMP_PROVIDER_DUMP_OPTIONS (struct)
+  - OFFLINE_DUMP_PROVIDER_END (function pointer)
+  - OFFLINE_DUMP_PROVIDER_END_INFO (struct)
   - OFFLINE_DUMP_PROVIDER_PROTOCOL (struct)
   - OFFLINE_DUMP_PROVIDER_PROTOCOL_REVISION (enum)
-  - OFFLINE_DUMP_INFO (struct)
-  - OFFLINE_DUMP_SECTION (struct)
-  - OFFLINE_DUMP_BEGIN_INFO (struct)
-  - OFFLINE_DUMP_PROGRESS_INFO (struct)
-  - OFFLINE_DUMP_END_INFO (struct)
-  - OFFLINE_DUMP_OPTIONS (struct)
-  - OFFLINE_DUMP_SECTION_TYPE (enum)
-  - OFFLINE_DUMP_SECTION_OPTIONS (struct)
-  - OFFLINE_DUMP_SECURE_KERNEL_STATE (enum)
-
-  - OFFLINE_DUMP_PROVIDER_BEGIN (function pointer)
   - OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS (function pointer)
-  - OFFLINE_DUMP_PROVIDER_END (function pointer)
-  - OFFLINE_DUMP_DATA_COPY (function pointer)
-
-  TODO: Better names for structures, OfflineDumpWrite.efi?
+  - OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO (struct)
+  - OFFLINE_DUMP_PROVIDER_SECTION_INFO (struct)
+  - OFFLINE_DUMP_PROVIDER_SECTION_OPTIONS (struct)
+  - OFFLINE_DUMP_PROVIDER_SECTION_TYPE (enum)
+  - OFFLINE_DUMP_PROVIDER_SECURE_CONTROL (enum)
 **/
 
 #ifndef _included_Protocol_OfflineDumpProvider_h
@@ -84,8 +81,8 @@ typedef struct _OFFLINE_DUMP_PROVIDER_PROTOCOL OFFLINE_DUMP_PROVIDER_PROTOCOL;
 
 **/
 typedef enum {
-  OfflineDumpProviderProtocolRevision_1_0    = 0x00010000,
-  OfflineDumpProviderProtocolRevisionCurrent = OfflineDumpProviderProtocolRevision_1_0,
+  OfflineDumpProviderProtocolRevision_1_0     = 0x00010000,
+  OfflineDumpProviderProtocolRevision_Current = OfflineDumpProviderProtocolRevision_1_0,
 } OFFLINE_DUMP_PROVIDER_PROTOCOL_REVISION;
 
 STATIC_ASSERT (
@@ -96,7 +93,7 @@ STATIC_ASSERT (
 /**
   Value that reflects any restriction that the high-level operating system (typically the
   trusted OS) has placed on the dump writer's behavior. This enumeration is used in the
-  SecureOfflineDumpControl field of the OFFLINE_DUMP_INFO structure.
+  SecureControl field of the OFFLINE_DUMP_PROVIDER_DUMP_INFO structure.
 **/
 typedef enum {
   //
@@ -108,7 +105,7 @@ typedef enum {
   // If this value is specified, the dump writer will not write a dump and will
   // return an error.
   //
-  OfflineDumpControlDumpNotAllowed,
+  OfflineDumpProviderSecureControl_DumpNotAllowed,
 
   //
   // This value indicates that the high-level operating system has not placed any
@@ -119,10 +116,10 @@ typedef enum {
   // OS has not set any restrictions).
   //
   // If this value is specified, the dump writer will ignore the
-  // SecureOfflineDumpConfiguration field and will not attempt to redact any
+  // SecureConfiguration field and will not attempt to redact any
   // secure-kernel data from the dump.
   //
-  OfflineDumpControlDumpAllowed,
+  OfflineDumpProviderSecureControl_DumpAllowed,
 
   //
   // This value indicates that the high-level operating system allows an offline dump
@@ -132,37 +129,37 @@ typedef enum {
   // dump redaction.
   //
   // If this value is specified, the dump writer will use the
-  // SecureOfflineDumpConfiguration field to determine how to redact secure-kernel
-  // data from the dump. If the SecureOfflineDumpConfiguration field does not provide
+  // SecureConfiguration field to determine how to redact secure-kernel
+  // data from the dump. If the SecureConfiguration field does not provide
   // valid configuration data, the dump writer will not write the dump and will
   // return an error.
   //
-  OfflineDumpControlRedactedDumpAllowed,
-} OFFLINE_DUMP_CONTROL;
+  OfflineDumpProviderSecureControl_RedactedDumpAllowed,
+} OFFLINE_DUMP_PROVIDER_SECURE_CONTROL;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_CONTROL) == 4,
-               "OFFLINE_DUMP_CONTROL should be 4 bytes"
+               sizeof (OFFLINE_DUMP_PROVIDER_SECURE_CONTROL) == 4,
+               "OFFLINE_DUMP_PROVIDER_SECURE_CONTROL should be 4 bytes"
                );
 
 /**
   Type of the section provided by the provider.
 
-  This enumeration type is used in the OFFLINE_DUMP_SECTION structure to indicate the
-  type of the section being specified. The writer uses this value to determine how
-  to process the section when generating a dump.
+  This enumeration type is used in the OFFLINE_DUMP_PROVIDER_SECTION_INFO structure to
+  indicate the type of the section being specified. The writer uses this value to determine
+  how to process the section when generating a dump.
 
   This is not always the same as the RAW_DUMP_SECTION_TYPE enumeration. At present,
-  OfflineDumpSectionTypeDdrRange maps closely to RAW_DUMP_SECTION_DDR_RANGE and
-  OfflineDumpSectionTypeSvSpecific maps closely to RAW_DUMP_SECTION_SV_SPECIFIC, but
-  future OFFLINE_DUMP_SECTION_TYPE values may not always have a direct mapping to
+  OfflineDumpProviderSectionType_DdrRange maps closely to RAW_DUMP_SECTION_DDR_RANGE and
+  OfflineDumpProviderSectionType_SvSpecific maps closely to RAW_DUMP_SECTION_SV_SPECIFIC, but
+  future OFFLINE_DUMP_PROVIDER_SECTION_TYPE values may not always have a direct mapping to
   RAW_DUMP_SECTION_TYPE values.
 **/
 typedef enum {
   //
   // Invalid section type.
   //
-  OfflineDumpSectionTypeNone = 0,
+  OfflineDumpProviderSectionType_None = 0,
 
   //
   // DDR range section. This section describes a range of DDR memory. This maps closely to
@@ -176,7 +173,7 @@ typedef enum {
   // - The DdrRange variant of the Information union should be used.
   // - The section's name should start with "DDR".
   //
-  OfflineDumpSectionTypeDdrRange,
+  OfflineDumpProviderSectionType_DdrRange,
 
   //
   // SV-specific section. This section vendor-defined data. This maps closely to
@@ -187,21 +184,21 @@ typedef enum {
   // - The data will be written to the dump as a RAW_DUMP_SECTION_SV_SPECIFIC section.
   // - The SVSpecific variant of the Information union should be used.
   //
-  OfflineDumpSectionTypeSvSpecific,
-} OFFLINE_DUMP_SECTION_TYPE;
+  OfflineDumpProviderSectionType_SvSpecific,
+} OFFLINE_DUMP_PROVIDER_SECTION_TYPE;
 
 /**
   Callback used for reading the section data, e.g. to access fenced memory regions.
-  Used in the OFFLINE_DUMP_SECTION structure's DataCopyCallback field.
+  Used in the OFFLINE_DUMP_PROVIDER_SECTION_INFO structure's DataCopyCallback field.
 
   @param[in]  pDataStart      The value of the opaque pDataStart parameter that was set in
-                              OFFLINE_DUMP_SECTION.
+                              OFFLINE_DUMP_PROVIDER_SECTION_INFO.
   @param[in]  Offset          Offset into the section. This will always be less than the DataSize
-                              parameter that was set in OFFLINE_DUMP_SECTION.
+                              parameter that was set in OFFLINE_DUMP_PROVIDER_SECTION_INFO.
                               This will always be a multiple of 16.
   @param[in]  Size            Number of bytes to read. Offset + Size will always be less than or
                               equal to the DataSize parameter that was set in
-                              OFFLINE_DUMP_SECTION. Size will always be a
+                              OFFLINE_DUMP_PROVIDER_SECTION_INFO. Size will always be a
                               multiple of 16 unless DataSize was not, in which case the final call
                               to this callback will have a Size that is not a multiple of 16 (to
                               read the last bytes).
@@ -237,12 +234,12 @@ typedef enum {
 **/
 typedef
   BOOLEAN
-(EFIAPI *OFFLINE_DUMP_DATA_COPY)(
-                                 IN VOID const *pDataStart,
-                                 IN UINTN      Offset,
-                                 IN UINTN      Size,
-                                 OUT UINT8     *pDestinationPos
-                                 );
+(EFIAPI *OFFLINE_DUMP_PROVIDER_DATA_COPY)(
+                                          IN VOID const *pDataStart,
+                                          IN UINTN      Offset,
+                                          IN UINTN      Size,
+                                          OUT UINT8     *pDestinationPos
+                                          );
 
 /**
   Information from the writer that is passed to the provider's Begin function.
@@ -256,7 +253,7 @@ typedef
   to handle this is to use a copy of the structure. For example, the Begin function might have
   code like this:
 
-    OFFLINE_DUMP_BEGIN_INFO BeginInfoCopy = { 0 };
+    OFFLINE_DUMP_PROVIDER_BEGIN_INFO BeginInfoCopy = { 0 };
     CopyMem(&BeginInfoCopy, pBeginInfo, MIN(sizeof(BeginInfoCopy), BeginInfoSize));
     // ... Use BeginInfoCopy rather than reading from pBeginInfo ...
 **/
@@ -275,7 +272,7 @@ typedef struct {
   // The capability flags that are requested by the high-level operating system.
   //
   OFFLINE_DUMP_USE_CAPABILITY_FLAGS          UseCapabilityFlags;
-} OFFLINE_DUMP_BEGIN_INFO;
+} OFFLINE_DUMP_PROVIDER_BEGIN_INFO;
 
 /**
   Information from the writer that is passed to the provider's ReportProgress function.
@@ -289,7 +286,7 @@ typedef struct {
   to handle this is to use a copy of the structure. For example, the Progress function might have
   code like this:
 
-    OFFLINE_DUMP_PROGRESS_INFO ProgressInfoCopy = { 0 };
+    OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO ProgressInfoCopy = { 0 };
     CopyMem(&ProgressInfoCopy, pProgressInfo, MIN(sizeof(ProgressInfoCopy), ProgressInfoSize));
     // ... Use ProgressInfoCopy rather than reading from pProgressInfo ...
 **/
@@ -299,7 +296,7 @@ typedef struct {
 
   // The number of bytes written so far.
   UINT64    WrittenBytes;
-} OFFLINE_DUMP_PROGRESS_INFO;
+} OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO;
 
 /**
   Information from the writer that is passed to the provider's End function.
@@ -313,7 +310,7 @@ typedef struct {
   to handle this is to use a copy of the structure. For example, the End function might have
   code like this:
 
-    OFFLINE_DUMP_END_INFO EndInfoCopy = { 0 };
+    OFFLINE_DUMP_PROVIDER_END_INFO EndInfoCopy = { 0 };
     CopyMem(&EndInfoCopy, pEndInfo, MIN(sizeof(EndInfoCopy), EndInfoSize));
     // ... Use EndInfoCopy rather than reading from pEndInfo ...
 **/
@@ -341,11 +338,12 @@ typedef struct {
   // This may be greater than SizeAvailable, indicating that the dump was truncated.
   //
   UINT64                SizeRequired;
-} OFFLINE_DUMP_END_INFO;
+} OFFLINE_DUMP_PROVIDER_END_INFO;
 
 /**
   Information provided by the protocol implementation (provider) to the writer to control
-  writer behavior. This information is provided in the Options field of OFFLINE_DUMP_INFO.
+  writer behavior. This information is provided in the Options field of
+  OFFLINE_DUMP_PROVIDER_DUMP_INFO.
 **/
 typedef struct {
   //
@@ -412,8 +410,8 @@ typedef struct {
   //
   // For testing/debugging purposes. Production environment MUST NOT set this flag.
   //
-  // If TRUE, the writer will ignore the SecureOfflineDumpControl field and will
-  // behave as if SecureOfflineDumpControl == OfflineDumpControlDumpAllowed.
+  // If TRUE, the writer will ignore the SecureControl field and will
+  // behave as if SecureControl == OfflineDumpProviderSecureControl_DumpAllowed.
   //
   UINT32    ForceDumpAllowed : 1;
 
@@ -421,16 +419,16 @@ typedef struct {
   // Reserved - must be set to 0.
   //
   UINT32    Reserved1        : 20;
-} OFFLINE_DUMP_OPTIONS;
+} OFFLINE_DUMP_PROVIDER_DUMP_OPTIONS;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_OPTIONS) == 8,
-               "OFFLINE_DUMP_OPTIONS should be 8 bytes"
+               sizeof (OFFLINE_DUMP_PROVIDER_DUMP_OPTIONS) == 8,
+               "OFFLINE_DUMP_PROVIDER_DUMP_OPTIONS should be 8 bytes"
                );
 
 /**
   Information provided by the protocol implementation (provider) to the writer to control section
-  behavior. This information is provided in the Options field of OFFLINE_DUMP_SECTION.
+  behavior. This information is provided in the Options field of OFFLINE_DUMP_PROVIDER_SECTION_INFO.
 **/
 typedef struct {
   //
@@ -448,18 +446,18 @@ typedef struct {
   // Reserved - must be set to 0.
   //
   UINT32    Reserved2;
-} OFFLINE_DUMP_SECTION_OPTIONS;
+} OFFLINE_DUMP_PROVIDER_SECTION_OPTIONS;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_SECTION_OPTIONS) == 8,
-               "OFFLINE_DUMP_SECTION_OPTIONS should be 8 bytes"
+               sizeof (OFFLINE_DUMP_PROVIDER_SECTION_OPTIONS) == 8,
+               "OFFLINE_DUMP_PROVIDER_SECTION_OPTIONS should be 8 bytes"
                );
 
 /**
   Information provided by the protocol implementation (provider) to the writer about a section to be included
-  in the dump. This information is provided in the pSections field of OFFLINE_DUMP_INFO.
+  in the dump. This information is provided in the pSections field of OFFLINE_DUMP_PROVIDER_DUMP_INFO.
 
-  Note that in some cases, a single OFFLINE_DUMP_SECTION element may result in
+  Note that in some cases, a single OFFLINE_DUMP_PROVIDER_SECTION_INFO element may result in
   multiple sections being written to the dump, or it may be ignored entirely. For example:
 
   - A single DdrRange section may result in multiple DDR sections being written to the dump, e.g. if
@@ -471,17 +469,17 @@ typedef struct {
   //
   // Configuration options for the section. Usually the default (0) values are ok.
   //
-  OFFLINE_DUMP_SECTION_OPTIONS     Options;
+  OFFLINE_DUMP_PROVIDER_SECTION_OPTIONS    Options;
 
   //
   // Section type, e.g. DdrRange or SvSpecific.
   //
-  OFFLINE_DUMP_SECTION_TYPE        Type;
+  OFFLINE_DUMP_PROVIDER_SECTION_TYPE       Type;
 
   //
   // Normally NONE. Should not include DUMP_VALID or INSUFFICIENT_STORAGE.
   //
-  RAW_DUMP_SECTION_HEADER_FLAGS    Flags;
+  RAW_DUMP_SECTION_HEADER_FLAGS            Flags;
 
   //
   // Section name. Ends at first '\0', or at 20 chars.
@@ -520,17 +518,17 @@ typedef struct {
   // DataCopyCallback as needed to read the section data. This might be used for data that is
   // generated/filtered on-the-fly or for data that is copied by a co-processor from a fenced region.
   //
-  OFFLINE_DUMP_DATA_COPY    DataCopyCallback;
+  OFFLINE_DUMP_PROVIDER_DATA_COPY    DataCopyCallback;
 
   //
   // Must be set to NULL. (Potential future use: extended section configuration.)
   //
-  VOID const                *Reserved1;
-} OFFLINE_DUMP_SECTION;
+  VOID const                         *Reserved1;
+} OFFLINE_DUMP_PROVIDER_SECTION_INFO;
 
 STATIC_ASSERT (
-               sizeof (OFFLINE_DUMP_SECTION) == 72,
-               "OFFLINE_DUMP_SECTION should be 72 bytes"
+               sizeof (OFFLINE_DUMP_PROVIDER_SECTION_INFO) == 72,
+               "OFFLINE_DUMP_PROVIDER_SECTION_INFO should be 72 bytes"
                );
 
 /**
@@ -543,7 +541,7 @@ STATIC_ASSERT (
   to handle this is to use a copy of the structure. For example, the Begin function might have
   code like this:
 
-    OFFLINE_DUMP_INFO DumpInfoCopy = { 0 };
+    OFFLINE_DUMP_PROVIDER_DUMP_INFO DumpInfoCopy = { 0 };
     // ... Initialize DumpInfoCopy rather than writing to pDumpInfo ...
     CopyMem(pDumpInfo, &DumpInfoCopy, MIN(DumpInfoSize, sizeof(DumpInfoCopy)));
 */
@@ -553,7 +551,7 @@ typedef struct {
   // buffer allocation (for tuning I/O performance and memory usage). Usually the default
   // (0) values are ok.
   //
-  OFFLINE_DUMP_OPTIONS    Options;
+  OFFLINE_DUMP_PROVIDER_DUMP_OPTIONS    Options;
 
   //
   // The block device to which the dump should be written, or NULL for default device.
@@ -571,25 +569,25 @@ typedef struct {
   EFI_HANDLE    BlockDevice;
 
   //
-  // Pointer to an OFFLINE_DUMP_SECTION[SectionCount] array with the
+  // Pointer to an OFFLINE_DUMP_PROVIDER_SECTION_INFO[SectionCount] array with the
   // information for DdrRange and SvSpecific sections to be included in the dump.
   //
   // This should not include CPU_CONTEXT, DUMP_REASON, or SYSTEM_INFORMATION sections.
   // The writer will automatically add these sections based on the information provided
   // below.
   //
-  OFFLINE_DUMP_SECTION const    *pSections;
+  OFFLINE_DUMP_PROVIDER_SECTION_INFO const    *pSections;
 
   //
   // Number of elements in the pSections array.
   //
-  UINT32                        SectionCount;
+  UINT32                                      SectionCount;
 
   //
   // Indicates the CPU architecture of the system. This is used in the generated
   // CPU_CONTEXT and SYSTEM_INFORMATION sections.
   //
-  RAW_DUMP_ARCHITECTURE         Architecture;
+  RAW_DUMP_ARCHITECTURE                       Architecture;
 
   //
   // Pointer to an array of CPU context structures, one for each core on the system. This
@@ -658,24 +656,24 @@ typedef struct {
   // requires offline dump redaction, it will invoke the  SMCs to apply the necessary
   // restrictions.
   //
-  // - Trusted firmware should store pSecureOfflineDumpConfiguration and
-  //   SecureOfflineDumpConfigurationSize variables in secure (fenced) memory. The values
+  // - Trusted firmware should store pOfflineDumpSecureConfiguration and
+  //   OfflineDumpSecureConfigurationSize variables in secure (fenced) memory. The values
   //   should be initialized to { NULL, 0 }.
   // - The high-level OS may invoke the "Offline Dump Configuration" SMC to change the
   //   value of the variables. The SMC handler should update its stored value
   //   accordingly.
-  // - If a crash occurs, the firmware should save the content of the referenced buffer
+  // - If a crash occurs, the firmware should save the referenced buffer
   //   so that it can be used during offline dump generation. During generation,
   //   the variable values from trusted firmware are used to set the
-  //   pSecureOfflineDumpConfiguration and SecureOfflineDumpConfigurationSize fields.
+  //   pSecureConfiguration and SecureConfigurationSize fields.
   //
-  VOID const    *pSecureOfflineDumpConfiguration;
+  VOID const    *pSecureConfiguration;
 
   //
   // Size of the secure offline dump configuration data provided by the OS via SMC, or
   // 0 if none.
   //
-  UINT32        SecureOfflineDumpConfigurationSize;
+  UINT32        SecureConfigurationSize;
 
   //
   // Set to a value indicating any restrictions that the high-level operating system has
@@ -687,14 +685,14 @@ typedef struct {
   // requires offline dump redaction, it will invoke the  SMCs to apply the necessary
   // restrictions.
   //
-  // - Trusted firmware should store an OfflineDumpControl variable in secure (fenced)
-  //   memory. The value should be initialized to OfflineDumpControlDumpAllowed (1).
+  // - Trusted firmware should store an OfflineDumpSecureControl variable in secure (fenced)
+  //   memory. The value should be initialized to OfflineDumpProviderSecureControl_DumpAllowed (1).
   // - The high-level OS may invoke the "Offline Dump Control" SMC to change the value
-  //   of the OfflineDumpControl variable. The SMC handler should update its stored value
+  //   of the OfflineDumpSecureControl variable. The SMC handler should update its stored value
   //   accordingly.
-  // - If a crash occurs, the firmware should save the value of the OfflineDumpControl
+  // - If a crash occurs, the firmware should save the value of the OfflineDumpSecureControl
   //   variable so that it can be used during offline dump generation. During generation,
-  //   the variable value from trusted firmware is used to set the SecureOfflineDumpControl
+  //   the variable value from trusted firmware is used to set the SecureControl
   //   field.
   //
   // This value MUST reflect the true state of the high-level operating system's restrictions.
@@ -709,15 +707,15 @@ typedef struct {
   // - If the ForceDumpAllowed option is unset and this value is set to Allowed, the
   //   writer will generate an unredacted dump.
   // - If the ForceDumpAllowed option is unset and this value is set to RedactedDumpAllowed,
-  //   the writer will generate a redacted dump using the pSecureOfflineDumpConfiguration
+  //   the writer will generate a redacted dump using the pSecureConfiguration
   //   field to determine how to redact secure-kernel CPU and memory. If the
-  //   pSecureOfflineDumpConfiguration field is NULL or invalid, the writer will not write
+  //   pSecureConfiguration field is NULL or invalid, the writer will not write
   //   the dump and will return an error.
   // - If the ForceDumpAllowed option is unset and this value is set to any other value, the
   //   writer will not generate a dump and will return an error.
   //
-  OFFLINE_DUMP_CONTROL    SecureOfflineDumpControl;
-} OFFLINE_DUMP_INFO;
+  OFFLINE_DUMP_PROVIDER_SECURE_CONTROL    SecureControl;
+} OFFLINE_DUMP_PROVIDER_DUMP_INFO;
 
 /**
   Called by the writer when it is about to begin writing the dump. The provider
@@ -726,13 +724,13 @@ typedef struct {
 
   @param[in]   pThis              A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
   @param[in]   BeginInfoSize      The size of the pBeginInfo buffer (i.e.
-                                  sizeof(OFFLINE_DUMP_BEGIN_INFO) when the writer was
+                                  sizeof(OFFLINE_DUMP_PROVIDER_BEGIN_INFO) when the writer was
                                   compiled). The provider should not read more than
                                   this many bytes from the buffer.
   @param[in]   pBeginInfo         A pointer to a buffer that contains information that the
                                   writer provides to the protocol).
   @param[in]   DumpInfoSize       The size of the pDumpInfo buffer (i.e.
-                                  sizeof(OFFLINE_DUMP_INFO) when the writer was
+                                  sizeof(OFFLINE_DUMP_PROVIDER_DUMP_INFO) when the writer was
                                   compiled). The provider should not write more than
                                   this many bytes to the buffer.
   @param[out]  pDumpInfo          A pointer to a buffer that receives the dump information
@@ -748,9 +746,9 @@ typedef
 (EFIAPI *OFFLINE_DUMP_PROVIDER_BEGIN)(
                                       IN  OFFLINE_DUMP_PROVIDER_PROTOCOL *pThis,
                                       IN  UINTN BeginInfoSize,
-                                      IN  OFFLINE_DUMP_BEGIN_INFO const *pBeginInfo,
+                                      IN  OFFLINE_DUMP_PROVIDER_BEGIN_INFO const *pBeginInfo,
                                       IN  UINTN DumpInfoSize,
-                                      OUT OFFLINE_DUMP_INFO *pDumpInfo
+                                      OUT OFFLINE_DUMP_PROVIDER_DUMP_INFO *pDumpInfo
                                       );
 
 /**
@@ -761,7 +759,7 @@ typedef
 
   @param[in]   pThis            A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
   @param[in]   ProgressInfoSize The size of the pProgressInfo buffer (i.e.
-                                sizeof(OFFLINE_DUMP_PROGRESS_INFO) when the writer was
+                                sizeof(OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO) when the writer was
                                 compiled). The provider should not read more than
                                 this many bytes from the buffer.
   @param[in]   pProgressInfo    A pointer to a buffer that contains information that the
@@ -777,7 +775,7 @@ typedef
 (EFIAPI *OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS)(
                                                 IN OFFLINE_DUMP_PROVIDER_PROTOCOL *pThis,
                                                 IN  UINTN ProgressInfoSize,
-                                                IN  OFFLINE_DUMP_PROGRESS_INFO const *pProgressInfo
+                                                IN  OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO const *pProgressInfo
                                                 );
 
 /**
@@ -789,7 +787,7 @@ typedef
 
   @param[in] pThis         A pointer to the OFFLINE_DUMP_PROVIDER_PROTOCOL instance.
   @param[in]   EndInfoSize The size of the pEndInfo buffer (i.e.
-                           sizeof(OFFLINE_DUMP_END_INFO) when the writer was
+                           sizeof(OFFLINE_DUMP_PROVIDER_END_INFO) when the writer was
                            compiled). The provider should not read more than
                            this many bytes from the buffer.
   @param[in]   pEndInfo    A pointer to a buffer that contains information that the
@@ -801,7 +799,7 @@ typedef
 (EFIAPI *OFFLINE_DUMP_PROVIDER_END)(
                                     IN  OFFLINE_DUMP_PROVIDER_PROTOCOL *pThis,
                                     IN  UINTN EndInfoSize,
-                                    IN  OFFLINE_DUMP_END_INFO const *pEndInfo
+                                    IN  OFFLINE_DUMP_PROVIDER_END_INFO const *pEndInfo
                                     );
 
 struct _OFFLINE_DUMP_PROVIDER_PROTOCOL {
