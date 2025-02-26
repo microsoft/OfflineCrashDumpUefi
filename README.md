@@ -97,6 +97,9 @@ Edit `edk2\EmulatorPkg\EmulatorPkg.dsc` to build the OfflineDump library and sam
 - Under `[LibraryClasses]`, add: `OfflineDumpWriterLib|OfflineDumpPkg/Library/OfflineDumpWriterLib/OfflineDumpWriterLib.inf`
 - Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpSampleApp.inf`
 - Under `[Components]`, add: `OfflineDumpPkg/Application/OfflineDumpWrite.inf`
+- Optional: Under `[PcdsFixedAtBuild]`, add: `gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x800`
+  - This allows storing larger UEFI variables, which is required to support dump encryption certificates
+    with larger public keys. The default value (0x400) is too small for RSA-3072 and RSA-4096.
 - Optional: Under `[PcdsFixedAtBuild]`, add: `gOfflineDumpTokenSpaceGuid.PcdOfflineDumpUsePartition|FALSE`
   - This makes the application write directly to `disk.dmg` rather than looking for a GPT partition within `disk.dmg`.
     This allows you to treat `disk.dmg` directly as a `rawdump.bin` file without any kind of extraction step.
