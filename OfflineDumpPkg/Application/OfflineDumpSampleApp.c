@@ -55,12 +55,12 @@ CopyHelloDataCallback (
 typedef struct {
   // Protocol implementation must always start with the protocol interface:
 
-  OFFLINE_DUMP_PROVIDER_PROTOCOL    Protocol;
+  OFFLINE_DUMP_PROVIDER_PROTOCOL     Protocol;
 
   // Additional fields needed by the protocol implementation can go here:
 
-  OFFLINE_DUMP_INFO                 DumpInfo;  // Information that will be returned by Begin.
-  OFFLINE_DUMP_END_INFO             EndInfo;   // Information that was captured by End.
+  OFFLINE_DUMP_PROVIDER_DUMP_INFO    DumpInfo; // Information that will be returned by Begin.
+  OFFLINE_DUMP_PROVIDER_END_INFO     EndInfo;  // Information that was captured by End.
 } SAMPLE_DUMP_PROVIDER;
 
 // Simple implementation of the Begin callback for the OfflineDumpProviderProtocol.
@@ -68,18 +68,18 @@ typedef struct {
 // It needs to fill in the pDumpInfo information.
 static EFI_STATUS
 SampleBegin (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
-  IN  UINTN                           BeginInfoSize,
-  IN  OFFLINE_DUMP_BEGIN_INFO const   *pBeginInfo,
-  IN  UINTN                           DumpInfoSize,
-  OUT OFFLINE_DUMP_INFO               *pDumpInfo
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL          *pThisProtocol,
+  IN  UINTN                                   BeginInfoSize,
+  IN  OFFLINE_DUMP_PROVIDER_BEGIN_INFO const  *pBeginInfo,
+  IN  UINTN                                   DumpInfoSize,
+  OUT OFFLINE_DUMP_PROVIDER_DUMP_INFO         *pDumpInfo
   )
 {
   EFI_STATUS                   Status;
   SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
 
   // BeginInfo holds the information we copy from pBeginInfo.
-  OFFLINE_DUMP_BEGIN_INFO  BeginInfo = { 0 };
+  OFFLINE_DUMP_PROVIDER_BEGIN_INFO  BeginInfo = { 0 };
 
   // Copy the writer's BeginInfo buffer to our local BeginInfo.
   // In case of size mismatch between us and the writer, copy the smaller of the two.
@@ -126,9 +126,9 @@ Done:
 // This will be called if and only if the Begin callback returned successfully.
 static VOID
 SampleEnd (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL  *pThisProtocol,
-  IN  UINTN                           EndInfoSize,
-  IN  OFFLINE_DUMP_END_INFO const     *pEndInfo
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL        *pThisProtocol,
+  IN  UINTN                                 EndInfoSize,
+  IN  OFFLINE_DUMP_PROVIDER_END_INFO const  *pEndInfo
   )
 {
   SAMPLE_DUMP_PROVIDER *const  pThis = BASE_CR (pThisProtocol, SAMPLE_DUMP_PROVIDER, Protocol);
@@ -150,15 +150,15 @@ SampleEnd (
 // This will only be called if the Begin callback returned successfully.
 static EFI_STATUS
 SampleReportProgress (
-  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL    *pThisProtocol,
-  IN  UINTN                             ProgressInfoSize,
-  IN  OFFLINE_DUMP_PROGRESS_INFO const  *pProgressInfo
+  IN  OFFLINE_DUMP_PROVIDER_PROTOCOL                    *pThisProtocol,
+  IN  UINTN                                             ProgressInfoSize,
+  IN  OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO const  *pProgressInfo
   )
 {
   (void)pThisProtocol; // Parameter not used.
 
   // ProgressInfo holds the information we copy from pProgressInfo.
-  OFFLINE_DUMP_PROGRESS_INFO  ProgressInfo = { 0 };
+  OFFLINE_DUMP_PROVIDER_REPORT_PROGRESS_INFO  ProgressInfo = { 0 };
 
   // Copy the writer's ProgressInfo buffer to our local ProgressInfo.
   // In case of size mismatch between us and the writer, copy the smaller of the two.
@@ -232,10 +232,10 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS            Status;
-  UINT8                 *MemoryMap = NULL;
-  OFFLINE_DUMP_SECTION  *Sections  = NULL;
-  OFFLINE_DUMP_SECTION  *pSection  = NULL;
+  EFI_STATUS                          Status;
+  UINT8                               *MemoryMap = NULL;
+  OFFLINE_DUMP_PROVIDER_SECTION_INFO  *Sections  = NULL;
+  OFFLINE_DUMP_PROVIDER_SECTION_INFO  *pSection  = NULL;
 
   UINTN   MemoryMapSize = 0;
   UINTN   MapKey;
@@ -283,7 +283,7 @@ UefiMain (
 
   // Allocate the sections array.
 
-  Sections = AllocateZeroPool (SectionsCount * sizeof (OFFLINE_DUMP_SECTION));
+  Sections = AllocateZeroPool (SectionsCount * sizeof (OFFLINE_DUMP_PROVIDER_SECTION_INFO));
   if (Sections == NULL) {
     Print (L"AllocatePool(SectionsCount = %u) failed\n", SectionsCount);
     goto Done;
@@ -292,13 +292,13 @@ UefiMain (
   // Prepare the sections array.
 
   UINT32  SectionsIndex = 0;
-  UINT64 DdrEnd = 0;
+  UINT64  DdrEnd        = 0;
 
   // Prepare one SV_SPECIFIC section (HelloSection).
   // For demonstration purposes, use a callback to copy the data.
   // In real code, you would only use a callback if you need to perform custom logic to read/generate the data.
   pSection        = &Sections[SectionsIndex++];
-  pSection->Type  = OfflineDumpSectionTypeSvSpecific;
+  pSection->Type  = OfflineDumpProviderSectionType_SvSpecific;
   pSection->pName = HelloSectionName;
   CopyGuid ((GUID *)pSection->Information.SVSpecific.SVSpecificData, &HelloSectionGuid);
   pSection->pDataStart       = HelloSectionData;
@@ -314,13 +314,13 @@ UefiMain (
     }
 
     pSection                            = &Sections[SectionsIndex++];
-    pSection->Type                      = OfflineDumpSectionTypeDdrRange;
+    pSection->Type                      = OfflineDumpProviderSectionType_DdrRange;
     pSection->Information.DdrRange.Base = Desc->PhysicalStart;
     pSection->pDataStart                = (void const *)(UINTN)Desc->PhysicalStart;
     pSection->DataSize                  = EFI_PAGES_TO_SIZE (Desc->NumberOfPages);
 
     // DDR_RANGE sections must be specified in order of their start address and must not overlap.
-    ASSERT(DdrEnd <= Desc->PhysicalStart);
+    ASSERT (DdrEnd <= Desc->PhysicalStart);
     DdrEnd = Desc->PhysicalStart + EFI_PAGES_TO_SIZE (Desc->NumberOfPages);
   }
 
@@ -349,7 +349,7 @@ UefiMain (
     .Protocol.End            = SampleEnd,
 
     // Provider private fields (used by the callbacks):
-    .DumpInfo                             = {
+    .DumpInfo                  = {
       .BlockDevice          = NULL, // Filled in by SampleBegin.
       .pSections            = Sections,
       .SectionCount         = SectionsCount,
@@ -366,10 +366,10 @@ UefiMain (
         0x1234,
         0x0,
       },
-      .Flags                              = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED, // TODO: Set this only if DDR was flushed before warm boot.
-      .pSecureOfflineDumpConfiguration    = NULL,                                 // TODO: Use real configuration ptr from trusted firmware (SMC).
-      .SecureOfflineDumpConfigurationSize = 0,                                    // TODO: Use real configuration size from trusted firmware (SMC).
-      .SecureOfflineDumpControl           = OfflineDumpControlDumpAllowed,        // TODO: Use real control value from trusted firmware (SMC).
+      .Flags                   = RAW_DUMP_HEADER_IS_DDR_CACHE_FLUSHED,         // TODO: Set this only if DDR was flushed before warm boot.
+      .pSecureConfiguration    = NULL,                                         // TODO: Use real configuration ptr from trusted firmware (SMC).
+      .SecureConfigurationSize = 0,                                            // TODO: Use real configuration size from trusted firmware (SMC).
+      .SecureControl           = OfflineDumpProviderSecureControl_DumpAllowed, // TODO: Use real control value from trusted firmware (SMC).
     },
   };
 
