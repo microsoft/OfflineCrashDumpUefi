@@ -26,14 +26,30 @@ STATIC_ASSERT (
                "OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS should be 4 bytes"
                );
 
-// Deprecated - use OFFLINE_DUMP_CONFIGURATION_TABLE_V3.
+// For use on current versions of Windows.
 typedef struct {
+  // Set to 2.
   UINT32                                      Version;
+
+  // 0: No abnormal reset occurred on the most recent system boot.
+  // 1: An abnormal reset occurred on the most recent system boot.
   UINT32                                      AbnormalResetOccurred;
+
+  // Capability flags:
+  // GPT_SCAN: The firmware supports scanning GPT for a dedicated dump partition.
+  // AES128_CTR: The firmware supports encrypting the dump with AES128_CTR + RSAES_OAEP.
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS    OfflineMemoryDumpCapable;
+
+  // Set to 0.
   UINT32                                      Padding1;
+
+  // Set to 0.
   UINT64                                      ResetDataAddress;
+
+  // Set to 0.
   UINT32                                      ResetDataSize;
+
+  // Set to 0.
   UINT32                                      Padding2;
 } OFFLINE_DUMP_CONFIGURATION_TABLE_V2;
 
@@ -42,6 +58,7 @@ STATIC_ASSERT (
                "OFFLINE_DUMP_CONFIGURATION_TABLE_V2 should be 32 bytes"
                );
 
+// For use on future versions of Windows.
 typedef struct {
   // Set to 3.
   UINT32                                      Version;
@@ -73,8 +90,8 @@ STATIC_ASSERT (
                "OFFLINE_DUMP_CONFIGURATION_TABLE_V3 should be 24 bytes"
                );
 
-#define OFFLINE_DUMP_CONFIGURATION_TABLE_CURRENT_VERSION  3
-typedef OFFLINE_DUMP_CONFIGURATION_TABLE_V3 OFFLINE_DUMP_CONFIGURATION_TABLE;
+#define OFFLINE_DUMP_CONFIGURATION_TABLE_CURRENT_VERSION  2
+typedef OFFLINE_DUMP_CONFIGURATION_TABLE_V2 OFFLINE_DUMP_CONFIGURATION_TABLE;
 
 //
 // Firmware variables used to pass information from the OS to the firmware.
