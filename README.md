@@ -215,7 +215,7 @@ The following steps occur if the system is rebooting due to an offline dump trig
 
 9. The firmware records diagnostic data for use in a BERT report in the subsequent normal boot.
 
-10. The firmware perfoms a cold reset (wiping memory). The system reboots for a
+10. The firmware performs a cold reset (wiping memory). The system reboots for a
     [normal boot](#booting-normally).
 
 ## EDK2 build environment (Windows)
