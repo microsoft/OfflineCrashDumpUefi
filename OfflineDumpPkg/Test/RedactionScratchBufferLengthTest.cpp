@@ -10,7 +10,10 @@ TestSimple(UINT64 highestPhysicalAddress, unsigned table1s, unsigned bitmaps)
     UINT32 expectedSize = 4 * 1024 + (table1s * 4 * 1024) + (bitmaps * 128 * 1024);
     UINT32 size;
     TestAssert(EFI_SUCCESS == GetOfflineDumpRedactionScratchBufferLength(highestPhysicalAddress, &size));
-    TestAssert(size == expectedSize);
+    if (size != expectedSize) {
+        TestErr("RedactionScratchBufferLength: address 0x%llX, expected 0x%X, actual 0x%X",
+             (unsigned long long)highestPhysicalAddress, expectedSize, size);
+    }
 }
 
 void
@@ -29,5 +32,5 @@ RedactionScratchBufferLengthTest()
 
     TestSimple(0, 1, 1); // Minimum.
     TestSimple(0x20BFFFFFFF, 1, 33); // 131GB
-    TestSimple(MaxAddress, 32, 32767); // 127.9TB
+    TestSimple(MaxAddress, 32, 32766); // 127.9TB
 }

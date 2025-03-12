@@ -68,7 +68,7 @@ CountTrailingZeros64 (
   if (Value == 0) {
     return FALSE;
   } else {
-    *pTrailingZeros = (UINT8)__builtin_ctzg (Value);
+    *pTrailingZeros = (UINT8)__builtin_ctzll (Value);
     return TRUE;
   }
 
@@ -368,8 +368,7 @@ OfflineDumpRedactionMap_Mark (
         pBitmap->Entry[BitmapIndex] = FullEntryMask;
       }
 
-      #pragma warning(suppress: 6297) // Warning about 32-bit overflow, but FullEntryCount is known to be small and won't overflow.
-      PageNum += FullEntryCount << BITS_PER_ENTRY_SHIFT;
+      PageNum += (UINT64)FullEntryCount << BITS_PER_ENTRY_SHIFT;
     }
 
     ASSERT (PageNum <= BitmapEndPageNum);
@@ -560,8 +559,7 @@ IsRedactedSet:;
         ENTRY const  Entry = pBitmap->Entry[BitmapIndex + FullEntryIndex] ^ AllBitsSetIfRedacted;
         UINT8        TrailingZeros;
         if (CountTrailingZeros64 (Entry, &TrailingZeros)) {
-          #pragma warning(suppress: 6297) // Warning about 32-bit overflow, but FullEntryCount is known to be small and won't overflow.
-          PageNum += FullEntryIndex << BITS_PER_ENTRY_SHIFT;
+          PageNum += (UINT64)FullEntryIndex << BITS_PER_ENTRY_SHIFT;
           PageNum += TrailingZeros;
           ASSERT (PageNum <= BitmapEndPageNum);
 
@@ -579,8 +577,7 @@ IsRedactedSet:;
         }
       }
 
-      #pragma warning(suppress: 6297) // Warning about 32-bit overflow, but FullEntryCount is known to be small and won't overflow.
-      PageNum += FullEntryCount << BITS_PER_ENTRY_SHIFT;
+      PageNum += (UINT64)FullEntryCount << BITS_PER_ENTRY_SHIFT;
     }
 
     ASSERT (PageNum <= BitmapEndPageNum);
