@@ -119,4 +119,35 @@ FindOfflineDumpRawBlockDeviceHandleForTesting (
   OUT EFI_HANDLE  *pRawBlockDeviceHandle
   );
 
+/**
+Determines the size of the working buffer needed by the offline dump writer to
+perform offline dump memory redaction. The value returned in pScratchBufferLength
+can be used for the "Scratch Buffer Length" field of the "Offline Dump Capabilities"
+table.
+
+- HighestPhysicalAddress: The highest physical address in the memory map provided to
+  Windows, e.g. 0x21FFFFFFFF (128GB of memory + 8GB of holes = 136GB-1).
+- pScratchBufferLength: Receives the size of the working buffer needed, in bytes.
+
+This function will return an error if HighestPhysicalAddress is greater than about
+127TB because the size of the required scratch buffer would not fit in a UINT32.
+
+This function provides accurate results when the memory map starts at an address
+less than 4GB and has no 4GB holes (or larger). If the memory map has large holes,
+this function will return a value that is larger than necessary.
+
+For example, on a system with 128GB of memory and ~8GB of scattered holes in the
+memory map, the highest physical address might be 0x21FFFFFFFF. This function will
+compute the scratch buffer length 4464640 (4360KB) as the sum of:
+
+  - 4KB * ceil(HighestPhysicalAddress / 2^52) = 4KB * 1 = 4KB
+  - 4KB * Number of 4TB regions touched by the memory map = 4KB * 1 = 4KB
+  - 128KB * Number of 4GB regions touched by the memory map = 128KB * 34 = 4352KB.
+  */
+EFI_STATUS
+GetOfflineDumpRedactionScratchBufferLength (
+  IN  UINT64  HighestPhysicalAddress,
+  OUT UINT32  *pLength
+  );
+
 #endif // _included_Library_OfflineDumpLib_h

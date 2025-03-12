@@ -12,6 +12,7 @@
 
   Collect.c
   Encryptor.c
+  RedactionMap.c
   Writer.c
 
 [Packages]

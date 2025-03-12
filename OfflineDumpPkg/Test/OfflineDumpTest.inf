@@ -1,0 +1,35 @@
+[Defines] 
+
+  INF_VERSION                    = 0x00010005
+  UEFI_SPECIFICATION_VERSION     = 0x0002001E
+  BASE_NAME                      = OfflineDumpTest
+  VERSION_STRING                 = 0.1
+  FILE_GUID                      = b133b1b0-eba9-4f6f-973f-621652c28d22
+  MODULE_TYPE                    = UEFI_APPLICATION
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+
+  OfflineDumpTest.cpp
+  RedactionScratchBufferLengthTest.cpp
+  SparseBitmapTest.cpp
+
+[Packages]
+
+  OfflineDumpPkg/OfflineDumpPkg.dec
+
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+
+  OfflineDumpLib
+  OfflineDumpWriterLib
+
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiLib
+
+  UefiApplicationEntryPoint
