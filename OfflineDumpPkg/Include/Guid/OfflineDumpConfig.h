@@ -14,10 +14,21 @@ Microsoft Offline Dump - Definitions for communication between firmware and OS.
 
 typedef enum {
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_NONE                 = 0,
+
+  // The firmware supports scanning for a dedicated GPT dump partition.
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_LOCATION_GPT_SCAN    = 0x01,
-  OFFLINE_DUMP_CONFIGURATION_CAPABLE_LOCATION_BYTE_OFFSET = 0x02, // Deprecated
-  OFFLINE_DUMP_CONFIGURATION_CAPABLE_RESET_DATA           = 0x04, // Deprecated
-  OFFLINE_DUMP_CONFIGURATION_CAPABLE_LOCATION_EFI_SYSTEM  = 0x08, // Deprecated
+
+  // Deprecated. Do not set this flag.
+  OFFLINE_DUMP_CONFIGURATION_CAPABLE_LOCATION_BYTE_OFFSET = 0x02,
+
+  // Deprecated. Do not set this flag.
+  OFFLINE_DUMP_CONFIGURATION_CAPABLE_RESET_DATA           = 0x04,
+
+  // Deprecated. Do not set this flag.
+  OFFLINE_DUMP_CONFIGURATION_CAPABLE_LOCATION_EFI_SYSTEM  = 0x08,
+
+  // The firmware supports encrypting the dump with AES_CTR + RSAES_OAEP.
+  // The firmware supports AES128, AES192, and AES256.
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_AES_CTR              = 0x10,
 } OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS;
 
@@ -35,9 +46,7 @@ typedef struct {
   // 1: An abnormal reset occurred on the most recent system boot.
   UINT32                                      AbnormalResetOccurred;
 
-  // Capability flags:
-  // GPT_SCAN: The firmware supports scanning GPT for a dedicated dump partition.
-  // AES128_CTR: The firmware supports encrypting the dump with AES128_CTR + RSAES_OAEP.
+  // Capability flags.
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS    OfflineMemoryDumpCapable;
 
   // Set to 0.
@@ -63,25 +72,32 @@ typedef struct {
   // Set to 3.
   UINT32                                      Version;
 
-  // 0: No abnormal reset occurred on the most recent system boot.
-  // 1: An abnormal reset occurred on the most recent system boot.
+  // Bit 0: Set to 1 if an abnormal reset occurred on the most recent system boot.
+  //
+  // Bits 1-31: Reserved, must be 0.
   UINT32                                      AbnormalResetOccurred;
 
-  // Capability flags:
-  // GPT_SCAN: The firmware supports scanning GPT for a dedicated dump partition.
-  // AES128_CTR: The firmware supports encrypting the dump with AES128_CTR + RSAES_OAEP.
+  // Capability flags, e.g. LOCATION_GPT_SCAN | AES_CTR.
   OFFLINE_DUMP_CONFIGURATION_CAPABLE_FLAGS    OfflineMemoryDumpCapable;
 
-  // 0: Offline crash dump generation is disabled or not correctly configured.
-  // 1: The device is correctly configured for offline crash dump generation.
+  // Bit 0: Set to 1 if the device is correctly configured for offline crash dump
+  //        collection. Firmware must set this bit after verifying all required
+  //        preconditions necessary for offline crash dump collection.
+  //
+  //        For example, this should be set to 0 if the device is in a retail
+  //        configuration (retail fused and no debug certificate installed).
+  //
+  // Bits 1-31: Reserved, must be 0.
   UINT32                                      OfflineMemoryDumpEnabled;
 
-  // 0: The most recent boot did not generate an offline crash dump.
-  // 1: The most recent boot generated an offline crash dump due to an abnormal reset.
+  // Bit 0: Set when the firmware has attempted offline crash dump collection
+  //        after an abnormal reset. 
+  //
+  // Bits 1-31: Reserved, must be 0.
   UINT32                                      OfflineMemoryDumpExpected;
 
-  // Firmware-defined value indicating reason(s) that the firmware failed to generate an
-  // offline crash dump after an abnormal reset.
+  // Bits 0-31: Bitfield to indicate any offline dump collection errors. Definitions of
+  //            values will be controlled by and specific to the SV.
   UINT32                                      OfflineDumpCreationErrors;
 } OFFLINE_DUMP_CONFIGURATION_TABLE_V3;
 
