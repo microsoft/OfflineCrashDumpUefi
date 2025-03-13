@@ -14,6 +14,15 @@
   Encryptor.c
   Writer.c
 
+[Sources.AARCH64]
+
+  AARCH64-GCC/aesv8-armx.S | GCC
+
+[Sources.X64]
+
+  X64-GCC/aesni-x86_64.s | GCC
+  X64-MSFT/aesni-x86_64.nasm | MSFT
+
 [Packages]
 
   OfflineDumpPkg/OfflineDumpPkg.dec

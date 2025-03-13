@@ -21,7 +21,7 @@
   # CryptoPkg
 
   BaseCryptLib                |CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
-  OpensslLib                  |CryptoPkg/Library/OpensslLib/OpensslLibAccel.inf
+  OpensslLib                  |CryptoPkg/Library/OpensslLib/OpensslLib.inf
   IntrinsicLib                |CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
 
   # MdeModulePkg
