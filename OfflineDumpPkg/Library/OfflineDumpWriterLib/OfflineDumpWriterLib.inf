@@ -20,7 +20,6 @@
 
 [Sources.X64]
 
-  X64-GCC/aesni-x86_64.s | GCC
   X64-MSFT/aesni-x86_64.nasm | MSFT
 
 [Packages]
