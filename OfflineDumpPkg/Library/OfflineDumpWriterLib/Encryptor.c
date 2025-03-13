@@ -104,7 +104,7 @@ typedef struct ALGORITHM_INFO {
 } ALGORITHM_INFO;
 
 // Used if accelerated implementation is not available.
-static int
+static int EFIAPI
 OD_fallback_aes_set_encrypt_key (
   const unsigned char  *userKey,
   const int            bits,
@@ -117,7 +117,7 @@ OD_fallback_aes_set_encrypt_key (
 
 // Used if accelerated implementation is not available.
 // Requires: size % 16 == 0.
-static void
+static void EFIAPI
 OD_fallback_aes_ecb_encrypt (
   const unsigned char  *in,
   unsigned char        *out,

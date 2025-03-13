@@ -1,8 +1,13 @@
 // Adapted from openssl/crypto/aes/asm/aesv8-armx.pl
 
-#include "arm_arch.h"
+#if defined(__ARM_FEATURE_BTI_DEFAULT) && __ARM_FEATURE_BTI_DEFAULT == 1
+# define GNU_PROPERTY_AARCH64_BTI (1 << 0)   /* Has Branch Target Identification */
+# define AARCH64_VALID_CALL_TARGET hint #34  /* BTI 'c' */
+#else
+# define GNU_PROPERTY_AARCH64_BTI 0  /* No Branch Target Identification */
+# define AARCH64_VALID_CALL_TARGET
+#endif
 
-#if __ARM_MAX_ARCH__>=7
 .arch   armv8-a+crypto
 .text
 .align  5
@@ -593,5 +598,3 @@ OD_accelerated_aes_ecb_encrypt:
 .Lecb_Final_abort:
         ret
 .size   OD_accelerated_aes_ecb_encrypt,.-OD_accelerated_aes_ecb_encrypt
-
-#endif
