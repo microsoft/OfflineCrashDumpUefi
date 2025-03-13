@@ -2,12 +2,14 @@
 #include <Library/OfflineDumpWriter.h>
 #include <Library/OfflineDumpVariables.h>
 
+#include <Uefi.h>
 #include <Protocol/OfflineDumpProvider.h>
 #include <Guid/OfflineDumpCpuContext.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/PrintLib.h>
+#include <Library/UefiBootServicesTableLib.h>
 
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
@@ -329,6 +331,19 @@ OfflineDumpWrite (
     return EFI_UNSUPPORTED;
   }
 
+  // Validate system status
+
+  EFI_TPL const  Tpl = gBS->RaiseTPL (TPL_CALLBACK);
+  gBS->RestoreTPL (Tpl);
+  if (Tpl  != TPL_APPLICATION) {
+    DEBUG_PRINT (DEBUG_ERROR, "Called at unsupported TPL = %u.\n", (unsigned)Tpl);
+
+    // Things seem to work for TPL_CALLBACK as long as we disable async I/O.
+    if (Tpl != TPL_CALLBACK) {
+      return EFI_UNSUPPORTED;
+    }
+  }
+
   // Call Begin to get DumpInfo.
 
   OFFLINE_DUMP_USE_CAPABILITY_FLAGS  UseCapabilityFlags;
@@ -355,6 +370,12 @@ OfflineDumpWrite (
   }
 
   // Validate DumpInfo
+
+  if ((Tpl != TPL_APPLICATION) && !DumpInfo.Options.DisableBlockIo2) {
+    // If we are not at TPL_APPLICATION then we cannot use async I/O.
+    DEBUG_PRINT (DEBUG_WARN, "Forcing DisableBlockIo2 due to TPL = %u.\n", (unsigned)Tpl);
+    DumpInfo.Options.DisableBlockIo2 = TRUE;
+  }
 
   if (DumpInfo.SectionCount > 0x80000000) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.SectionCount %u is too large\n", DumpInfo.SectionCount);
@@ -395,6 +416,10 @@ OfflineDumpWrite (
 
   if (DumpInfo.Options.ForceDumpAllowed) {
     DEBUG_PRINT (DEBUG_WARN, "Forcing dump generation (ignoring SecureControl)\n");
+  }
+
+  if (DumpInfo.Options.DisableBlockIo2) {
+    DEBUG_PRINT (DEBUG_WARN, "Disabling BlockIo2 (no async I/O)\n");
   }
 
   for (UINT32 SectionIndex = 0; SectionIndex < DumpInfo.SectionCount; SectionIndex += 1) {
