@@ -18,6 +18,8 @@
   - OFFLINE_DUMP_PROVIDER_SECTION_INFO (struct)
   - OFFLINE_DUMP_PROVIDER_SECTION_OPTIONS (struct)
   - OFFLINE_DUMP_PROVIDER_SECTION_TYPE (enum)
+  - OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_ARM64 (struct)
+  - OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_X64 (struct)
   - OFFLINE_DUMP_PROVIDER_SECURE_CONTROL (enum)
 **/
 
@@ -341,6 +343,24 @@ typedef struct {
 } OFFLINE_DUMP_PROVIDER_END_INFO;
 
 /**
+  Information used to perform redaction of secure-kernel CPU context information for
+  ARM64. This structure is used in the pSecureCpuContexts field of
+  OFFLINE_DUMP_PROVIDER_DUMP_INFO.
+*/
+typedef struct {
+  UINT64 TTBR1_EL1; // Translation Table Base Register 1 (EL1)
+} OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_ARM64;
+
+/**
+  Information used to perform redaction of secure-kernel CPU context information for
+  X64. This structure is used in the pSecureCpuContexts field of
+  OFFLINE_DUMP_PROVIDER_DUMP_INFO.
+*/
+typedef struct {
+  UINT64 Reserved1; // Reserved
+} OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_X64;
+
+/**
   Information provided by the protocol implementation (provider) to the writer to control
   writer behavior. This information is provided in the Options field of
   OFFLINE_DUMP_PROVIDER_DUMP_INFO.
@@ -609,6 +629,7 @@ typedef struct {
 
   //
   // The size of each element in the pCpuContexts array.
+  // This must be a multiple of 8.
   //
   // - If Architecture == RAW_DUMP_ARCHITECTURE_ARM64, this should be sizeof(CONTEXT_ARM64).
   // - If Architecture == RAW_DUMP_ARCHITECTURE_X64, this should be sizeof(CONTEXT_AMD64).
@@ -715,6 +736,35 @@ typedef struct {
   //   writer will not generate a dump and will return an error.
   //
   OFFLINE_DUMP_PROVIDER_SECURE_CONTROL    SecureControl;
+
+  //
+  // Pointer to an array of secure context structures, one for each core on the
+  // system. Core contexts must be ordered the same way as in the pCpuContexts
+  // field (i.e. SecureCpuContexts[N] must be the secure context for the core
+  // described by CpuContexts[N]).
+  //
+  // This field is used when performing CPU context redaction.
+  //
+  // - If Architecture == RAW_DUMP_ARCHITECTURE_ARM64, this should point at an
+  //   OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_ARM64[SecureCpuContextCount] array.
+  // - If Architecture == RAW_DUMP_ARCHITECTURE_X64, this should point at an
+  //   OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_X64[SecureCpuContextCount] array.
+  //
+  VOID const    *pSecureCpuContexts;
+
+  //
+  // Number of elements in the pSecureCpuContexts array (number of cores on the system).
+  // This should be the same as the CpuContextCount field.
+  //
+  UINT32        SecureCpuContextCount;
+
+  //
+  // The size of each element in the pSecureCpuContexts array.
+  //
+  // - If Architecture == RAW_DUMP_ARCHITECTURE_ARM64, this should be sizeof(OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_ARM64).
+  // - If Architecture == RAW_DUMP_ARCHITECTURE_X64, this should be sizeof(OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_X64).
+  //
+  UINT32        SecureCpuContextSize;
 } OFFLINE_DUMP_PROVIDER_DUMP_INFO;
 
 /**
