@@ -629,7 +629,7 @@ typedef struct {
 
   //
   // The size of each element in the pCpuContexts array.
-  // This must be a multiple of 8.
+  // This must be a multiple of 8 (alignment for 64-bit registers).
   //
   // - If Architecture == RAW_DUMP_ARCHITECTURE_ARM64, this should be sizeof(CONTEXT_ARM64).
   // - If Architecture == RAW_DUMP_ARCHITECTURE_X64, this should be sizeof(CONTEXT_AMD64).
@@ -760,6 +760,7 @@ typedef struct {
 
   //
   // The size of each element in the pSecureCpuContexts array.
+  // This must be a multiple of 8 (alignment for 64-bit registers).
   //
   // - If Architecture == RAW_DUMP_ARCHITECTURE_ARM64, this should be sizeof(OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_ARM64).
   // - If Architecture == RAW_DUMP_ARCHITECTURE_X64, this should be sizeof(OFFLINE_DUMP_PROVIDER_SECURE_CPU_CONTEXT_X64).
