@@ -57,7 +57,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
 //
 // In-place operation is supported, i.e. pInputData and pOutputData may point to the same
 // place. Other kinds of overlap between the buffers may have unpredictable results.
-EFI_STATUS
+void
 OfflineDumpEncryptorEncrypt (
   IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
   IN UINT64                  StartingByteOffset,

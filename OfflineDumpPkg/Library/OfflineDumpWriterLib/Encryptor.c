@@ -15,14 +15,26 @@ STATIC_ASSERT (
 #undef _WIN32
 #undef _WIN64
 #include <Library/Include/CrtLibSupport.h>  // CryptoPkg/...
+#include <openssl/aes.h>                    // CryptoPkg/Library/OpensslLib/openssl/include/...
 #include <openssl/evp.h>                    // CryptoPkg/Library/OpensslLib/openssl/include/...
 #include <openssl/x509.h>                   // CryptoPkg/Library/OpensslLib/openssl/include/...
 #include <openssl/pkcs7.h>                  // CryptoPkg/Library/OpensslLib/openssl/include/...
 
+#include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 
 #include <Library/BaseCryptLib.h>
+
+#if defined (MDE_CPU_X64)
+  #include <Register/Intel/Cpuid.h>
+#endif // defined (MDE_CPU_X64)
+
+#if defined (MDE_CPU_X64) || defined (MDE_CPU_AARCH64)
+#define AES_ACCELERATION_AVAILABLE  1
+#else
+#define AES_ACCELERATION_AVAILABLE  0
+#endif
 
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
@@ -41,7 +53,7 @@ Almost-useful functions from BaseCryptLib.h:
 
 To be able to use BaseCryptLib.h instead of <openssl/???.h>, we would need:
 
-- AesEcbEncrypt (AES-NI optimizations are REQUIRED).
+- AesEcbEncrypt (for the fallback implementation).
 - Pkcs7Encrypt - could be implemented using RsaOaepEncrypt + an ASN.1 writer from somewhere.
 */
 
@@ -56,44 +68,152 @@ STATIC_ASSERT (
                "KeyStreamBufferSize must be a multiple of 16"
                );
 
+// Function type for aes_set_encrypt_key implementations.
+typedef int (EFIAPI AES_SET_ENCRYPT_KEY) (
+  const unsigned char  *userKey,
+  int                  bits,
+  AES_KEY              *key
+  );
+
+// Function type for aes_ecb_encrypt implementations.
+// Requires: size % 16 == 0.
+typedef void (EFIAPI AES_ECB_ENCRYPT) (
+  const unsigned char  *in,
+  unsigned char        *out,
+  size_t               size,
+  const AES_KEY        *key
+  );
+
+typedef struct {
+  AES_SET_ENCRYPT_KEY    *pSetEncryptKey;
+  AES_ECB_ENCRYPT        *pEcbEncrypt;
+} AES_ENCRYPTION_OPERATIONS;
+
 struct OFFLINE_DUMP_ENCRYPTOR {
-  EVP_CIPHER_CTX        *pCipherCtx;
+  AES_ECB_ENCRYPT       *pEcbEncrypt;
   UINT64                InitializationVector;
   ENC_DUMP_ALGORITHM    Algorithm;
+  AES_KEY               Key;
   AES_BLOCK             KeyStreamBuffer[KEY_STREAM_BUFFER_BLOCK_COUNT];
 };
 
 typedef struct ALGORITHM_INFO {
-  ENC_DUMP_ALGORITHM    Algorithm;
-  UINT8                 KeySize;
-  EVP_CIPHER const      *pCipher;
+  ENC_DUMP_ALGORITHM                 Algorithm;
+  UINT8                              KeySize;
+  AES_ENCRYPTION_OPERATIONS const    *pOperations;
 } ALGORITHM_INFO;
+
+// Used if accelerated implementation is not available.
+static int EFIAPI
+OD_fallback_aes_set_encrypt_key (
+  const unsigned char  *userKey,
+  const int            bits,
+  AES_KEY              *key
+  )
+{
+  // From openssl/aes.h
+  return AES_set_encrypt_key (userKey, bits, key);
+}
+
+// Used if accelerated implementation is not available.
+// Requires: size % 16 == 0.
+static void EFIAPI
+OD_fallback_aes_ecb_encrypt (
+  const unsigned char  *in,
+  unsigned char        *out,
+  size_t               size,
+  const AES_KEY        *key
+  )
+{
+  ASSERT (size % AES_BLOCK_SIZE == 0);
+  for (size_t i = 0; i < size; i += AES_BLOCK_SIZE) {
+    // From openssl/aes.h
+    AES_encrypt (in + i, out + i, key);
+  }
+}
+
+static AES_ENCRYPTION_OPERATIONS const  gFallbackAesEncryptionOperations = {
+  .pSetEncryptKey = OD_fallback_aes_set_encrypt_key,
+  .pEcbEncrypt    = OD_fallback_aes_ecb_encrypt,
+};
+
+#if AES_ACCELERATION_AVAILABLE
+
+// Assembly-language implementations.
+AES_SET_ENCRYPT_KEY  OD_accelerated_aes_set_encrypt_key;
+AES_ECB_ENCRYPT      OD_accelerated_aes_ecb_encrypt;
+
+static AES_ENCRYPTION_OPERATIONS const  gAcceleratedAesEncryptionOperations = {
+  .pSetEncryptKey = OD_accelerated_aes_set_encrypt_key,
+  .pEcbEncrypt    = OD_accelerated_aes_ecb_encrypt,
+};
+
+#endif // AES_ACCELERATION_AVAILABLE
 
 static ALGORITHM_INFO
 OD_GetAlgorithmInfo (
   IN ENC_DUMP_ALGORITHM  Algorithm
   )
 {
-  ALGORITHM_INFO  Info = { Algorithm, 0, NULL };
+  ALGORITHM_INFO  Info;
+
+  Info.Algorithm = Algorithm;
 
   switch (Algorithm) {
     default:
-      Info.KeySize = 0;
-      Info.pCipher = NULL;
-      break;
+      Info.KeySize     = 0;
+      Info.pOperations = NULL;
+      goto Done;
+
     case ENC_DUMP_ALGORITHM_AES128_CTR:
       Info.KeySize = 16;
-      Info.pCipher = EVP_aes_128_ecb ();
       break;
+
     case ENC_DUMP_ALGORITHM_AES192_CTR:
       Info.KeySize = 24;
-      Info.pCipher = EVP_aes_192_ecb ();
       break;
+
     case ENC_DUMP_ALGORITHM_AES256_CTR:
       Info.KeySize = 32;
-      Info.pCipher = EVP_aes_256_ecb ();
       break;
   }
+
+ #if AES_ACCELERATION_AVAILABLE
+
+  static BOOLEAN  CheckedAcceleratedAes = FALSE;
+  static BOOLEAN  UseAcceleratedAes;
+
+  if (!CheckedAcceleratedAes) {
+ #if defined (MDE_CPU_X64)
+
+    CPUID_VERSION_INFO_ECX  Ecx = { 0 };
+    AsmCpuid (CPUID_VERSION_INFO, NULL, NULL, &Ecx.Uint32, NULL);
+    UseAcceleratedAes = 0 != Ecx.Bits.AESNI;
+
+ #elif defined (MDE_CPU_AARCH64)
+
+    UINT64 const  Isar0 = ArmReadIdAA64Isar0Reg ();
+    UseAcceleratedAes = 0 != (ARM_ID_AA64ISAR0_EL1_AES_MASK & (Isar0 >> ARM_ID_AA64ISAR0_EL1_AES_SHIFT));
+
+ #else
+
+    #error "OD_UseAcceleratedAes() not implemented for this architecture"
+
+ #endif
+
+    CheckedAcceleratedAes = TRUE;
+  }
+
+  if (UseAcceleratedAes) {
+    Info.pOperations = &gAcceleratedAesEncryptionOperations;
+    goto Done;
+  }
+
+ #endif // !AES_ACCELERATION_AVAILABLE
+
+  Info.pOperations = &gFallbackAesEncryptionOperations;
+
+Done:
 
   return Info;
 }
@@ -107,7 +227,7 @@ OD_EncryptorNew (
   OUT OFFLINE_DUMP_ENCRYPTOR  **ppEncryptor
   )
 {
-  ASSERT (AlgorithmInfo.pCipher != NULL);
+  ASSERT (AlgorithmInfo.pOperations != NULL);
   ASSERT (pKeyBio != NULL);
   ASSERT (ppEncryptor != NULL);
 
@@ -144,24 +264,20 @@ OD_EncryptorNew (
     goto Done;
   }
 
-  EVP_CIPHER_CTX *const  pCipherCtx = EVP_CIPHER_CTX_new ();
+  DEBUG_PRINT (
+               DEBUG_INFO,
+               "Encryptor: Algorithm %u, KeySize %u, Accelerated %u\n",
+               AlgorithmInfo.Algorithm,
+               AlgorithmInfo.KeySize,
+               AlgorithmInfo.pOperations != &gFallbackAesEncryptionOperations
+               );
 
-  if (pCipherCtx == NULL) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_new() failed\n");
-    FreePool (pEncryptor);
-    pEncryptor = NULL;
-    Status     = EFI_OUT_OF_RESOURCES;
-    goto Done;
-  }
-
-  pEncryptor->pCipherCtx           = pCipherCtx;
+  pEncryptor->pEcbEncrypt          = AlgorithmInfo.pOperations->pEcbEncrypt;
   pEncryptor->InitializationVector = CtrRandom.InitializationVector;
   pEncryptor->Algorithm            = AlgorithmInfo.Algorithm;
 
-  if (!EVP_EncryptInit (pCipherCtx, AlgorithmInfo.pCipher, CtrRandom.Key, NULL)) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_EncryptInit() failed\n");
-  } else if (!EVP_CIPHER_CTX_set_padding (pCipherCtx, 0)) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_CIPHER_CTX_set_padding() failed\n");
+  if (AlgorithmInfo.pOperations->pSetEncryptKey (CtrRandom.Key, AlgorithmInfo.KeySize * 8, &pEncryptor->Key)) {
+    DEBUG_PRINT (DEBUG_ERROR, "set_encrypt_key() failed\n");
   } else if (!BIO_write (pKeyBio, CtrRandom.Key, AlgorithmInfo.KeySize)) {
     DEBUG_PRINT (DEBUG_ERROR, "BIO_write() failed\n");
   } else {
@@ -188,38 +304,26 @@ OfflineDumpEncryptorDelete (
   )
 {
   if (NULL != pEncryptor) {
-    EVP_CIPHER_CTX_free (pEncryptor->pCipherCtx);
     ZeroMem (pEncryptor, OFFSET_OF (OFFLINE_DUMP_ENCRYPTOR, KeyStreamBuffer));
     FreePool (pEncryptor);
   }
 }
 
-static BOOLEAN
+static void
 OD_EncryptKeyStreamBuffer (
   IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
   IN UINT32                  BlockCount
   )
 {
-  int      InLen  = BlockCount * sizeof (AES_BLOCK);
-  int      OutLen = 0;
-  BOOLEAN  Ok;
-
-  Ok = 0 != EVP_EncryptUpdate (
-                               pEncryptor->pCipherCtx,
-                               (UINT8 *)pEncryptor->KeyStreamBuffer,
-                               &OutLen,
-                               (UINT8 *)pEncryptor->KeyStreamBuffer,
-                               InLen
-                               );
-  if (!Ok) {
-    DEBUG_PRINT (DEBUG_ERROR, "EVP_EncryptUpdate() failed\n");
-  }
-
-  ASSERT (InLen == OutLen || !Ok);
-  return Ok;
+  pEncryptor->pEcbEncrypt (
+                           (UINT8 *)pEncryptor->KeyStreamBuffer,
+                           (UINT8 *)pEncryptor->KeyStreamBuffer,
+                           BlockCount * sizeof (AES_BLOCK),
+                           &pEncryptor->Key
+                           );
 }
 
-EFI_STATUS
+void
 OfflineDumpEncryptorEncrypt (
   IN OFFLINE_DUMP_ENCRYPTOR  *pEncryptor,
   IN UINT64                  StartingByteOffset,
@@ -249,9 +353,7 @@ OfflineDumpEncryptorEncrypt (
       pEncryptor->KeyStreamBuffer[i].Hi = pEncryptor->InitializationVector;
     }
 
-    if (!OD_EncryptKeyStreamBuffer (pEncryptor, KEY_STREAM_BUFFER_BLOCK_COUNT)) {
-      return EFI_DEVICE_ERROR;
-    }
+    OD_EncryptKeyStreamBuffer (pEncryptor, KEY_STREAM_BUFFER_BLOCK_COUNT);
 
     for (unsigned i = 0; i != KEY_STREAM_BUFFER_BLOCK_COUNT; i += 1) {
       pOutputBlocks[ProcessedBlockCount + i].Lo = pInputBlocks[ProcessedBlockCount + i].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
@@ -271,9 +373,7 @@ OfflineDumpEncryptorEncrypt (
       pEncryptor->KeyStreamBuffer[i].Hi = pEncryptor->InitializationVector;
     }
 
-    if (!OD_EncryptKeyStreamBuffer (pEncryptor, remainingBlocks)) {
-      return EFI_DEVICE_ERROR;
-    }
+    OD_EncryptKeyStreamBuffer (pEncryptor, remainingBlocks);
 
     for (unsigned i = 0; i != remainingBlocks; i += 1) {
       pOutputBlocks[ProcessedBlockCount + i].Lo = pInputBlocks[ProcessedBlockCount + i].Lo ^ pEncryptor->KeyStreamBuffer[i].Lo;
@@ -283,7 +383,7 @@ OfflineDumpEncryptorEncrypt (
     ProcessedBlockCount += remainingBlocks;
   }
 
-  return EFI_SUCCESS;
+  return;
 }
 
 ENC_DUMP_ALGORITHM
@@ -313,7 +413,7 @@ OfflineDumpEncryptorNewKeyInfoBlock (
 
   ALGORITHM_INFO  const  AlgorithmInfo = OD_GetAlgorithmInfo (Algorithm);
 
-  if (AlgorithmInfo.pCipher == NULL) {
+  if (AlgorithmInfo.pOperations == NULL) {
     DEBUG_PRINT (DEBUG_ERROR, "Unsupported Algorithm %u\n", Algorithm);
     Status = EFI_UNSUPPORTED;
     goto Error;

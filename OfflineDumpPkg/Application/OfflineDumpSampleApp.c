@@ -66,7 +66,7 @@ typedef struct {
 // Simple implementation of the Begin callback for the OfflineDumpProviderProtocol.
 // This is called by the writer to get dump configuration and dump data.
 // It needs to fill in the pDumpInfo information.
-static EFI_STATUS
+static EFI_STATUS EFIAPI
 SampleBegin (
   IN  OFFLINE_DUMP_PROVIDER_PROTOCOL          *pThisProtocol,
   IN  UINTN                                   BeginInfoSize,
@@ -124,7 +124,7 @@ Done:
 // This is called by the writer to signal that dump generation has ended.
 // It should perform cleanup as needed.
 // This will be called if and only if the Begin callback returned successfully.
-static VOID
+static VOID EFIAPI
 SampleEnd (
   IN  OFFLINE_DUMP_PROVIDER_PROTOCOL        *pThisProtocol,
   IN  UINTN                                 EndInfoSize,
@@ -148,7 +148,7 @@ SampleEnd (
 // Simple implementation of the ReportProgress callback for the OfflineDumpProviderProtocol.
 // This is called periodically by the writer to give the provider a chance to update progress UI.
 // This will only be called if the Begin callback returned successfully.
-static EFI_STATUS
+static EFI_STATUS EFIAPI
 SampleReportProgress (
   IN  OFFLINE_DUMP_PROVIDER_PROTOCOL                    *pThisProtocol,
   IN  UINTN                                             ProgressInfoSize,

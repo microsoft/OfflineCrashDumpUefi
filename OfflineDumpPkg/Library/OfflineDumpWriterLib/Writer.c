@@ -446,19 +446,13 @@ ODW_EncryptIntoCurrentBufferInfo (
                EncryptSize
                );
   ASSERT (EncryptSize % SectionAlign == 0);
-  EFI_STATUS const  Status = OfflineDumpEncryptorEncrypt (
-                                                          pDumpWriter->pEncryptor,
-                                                          Counter,
-                                                          EncryptSize,
-                                                          pInputData,
-                                                          pOutputData
-                                                          );
-
-  if (EFI_ERROR (Status)) {
-    DEBUG_PRINT (DEBUG_ERROR, "Encrypt data failed (%r)\n", Status);
-    pDumpWriter->LastWriteError = Status;
-    ZeroMem (pOutputData, EncryptSize);
-  }
+  OfflineDumpEncryptorEncrypt (
+                               pDumpWriter->pEncryptor,
+                               Counter,
+                               EncryptSize,
+                               pInputData,
+                               pOutputData
+                               );
 }
 
 static void
@@ -1033,17 +1027,13 @@ OfflineDumpWriterFlushHeaders (
                    EncryptSize
                    );
       ASSERT (EncryptSize % SectionAlign == 0);
-      Status = OfflineDumpEncryptorEncrypt (
-                                            pDumpWriter->pEncryptor,
-                                            Counter,
-                                            EncryptSize,
-                                            pDest + EncryptStart,
-                                            pDest + EncryptStart
-                                            );
-      if (EFI_ERROR (Status)) {
-        DEBUG_PRINT (DEBUG_ERROR, "Encrypt headers failed (%r)\n", Status);
-        break;
-      }
+      OfflineDumpEncryptorEncrypt (
+                                   pDumpWriter->pEncryptor,
+                                   Counter,
+                                   EncryptSize,
+                                   pDest + EncryptStart,
+                                   pDest + EncryptStart
+                                   );
     }
 
     if (pBlockIo2) {
