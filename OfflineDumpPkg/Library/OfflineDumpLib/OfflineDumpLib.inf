@@ -12,6 +12,7 @@
 
   Execute.c
   Partition.c
+  RedactionScratchBufferLength.c
   Variables.c
 
 [Packages]

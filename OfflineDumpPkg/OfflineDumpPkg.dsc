@@ -64,6 +64,8 @@
   OfflineDumpPkg/Application/OfflineDumpWrite.inf
   OfflineDumpPkg/Application/OfflineDumpBench.inf
 
+  OfflineDumpPkg/Test/OfflineDumpTest.inf
+
 [PcdsFixedAtBuild]
 
   # DEBUG_PRINT() filter mask (consumed by DebugLib).
