@@ -62,16 +62,16 @@ struct _offline_dump_redaction_map_CHUNK;
 
 // Redaction map structure. Treat as opaque.
 typedef struct {
-    UINT64 MaxPageNum;   // Page numbers with this value or higher are not redacted.
-    struct _offline_dump_redaction_map_CHUNK* pBufferChunks; // Table0 starts at pBufferChunks[0].
-    UINT32 MaxBufferChunks; // pBufferChunks is OFFLINE_DUMP_REDACTION_MAP_CHUNK[MaxBufferChunks].
-    UINT32 UsedBufferChunks;// Next unused chunk is pBufferChunks[UsedBufferChunks].
+  UINT64                                      MaxPageNum;       // Page numbers with this value or higher are not redacted.
+  struct _offline_dump_redaction_map_CHUNK    *pBufferChunks;   // Table0 starts at pBufferChunks[0].
+  UINT32                                      MaxBufferChunks;  // pBufferChunks is OFFLINE_DUMP_REDACTION_MAP_CHUNK[MaxBufferChunks].
+  UINT32                                      UsedBufferChunks; // Next unused chunk is pBufferChunks[UsedBufferChunks].
 } OFFLINE_DUMP_REDACTION_MAP;
 
 // Returned by OfflineDumpRedactionMap_GetFirstRedactedRange(pMap, BeginPageNum, EndPageNum).
 typedef struct {
-    UINT64 BeginRedactedPageNum;
-    UINT64 EndRedactedPageNum;
+  UINT64    BeginRedactedPageNum;
+  UINT64    EndRedactedPageNum;
 } OFFLINE_DUMP_REDACTION_MAP_RANGE;
 
 #ifdef __cplusplus
@@ -91,12 +91,24 @@ MaxPageNum: 1 + highest PageNum that could possibly be redacted, e.g. 0x10000000
             physical address space).
 */
 EFI_STATUS
-OfflineDumpRedactionMap_Init(
-    OUT OFFLINE_DUMP_REDACTION_MAP* pMap,
-    IN void* pBuffer,
-    IN UINTN BufferSize,
-    IN UINT64 MaxPageNum
-);
+OfflineDumpRedactionMap_Init (
+  OUT OFFLINE_DUMP_REDACTION_MAP  *pMap,
+  IN void                         *pBuffer,
+  IN UINTN                        BufferSize,
+  IN UINT64                       MaxPageNum
+  );
+
+/*
+Marks the specified page as exposed (unredacted).
+
+This function is for exposing a single page. Use
+OfflineDumpRedactionMap_MarkRange to redact a page or to mark a range of pages.
+*/
+void
+OfflineDumpRedactionMap_ExposePage (
+  IN OUT OFFLINE_DUMP_REDACTION_MAP  *pMap,
+  IN UINT64                          PageNum
+  );
 
 /*
 Marks the specified pages as redacted or exposed.
@@ -105,12 +117,12 @@ Fails if FirstPageNum >= OfflineDumpRedactionMapMaxPageNumber(pMap)
 or if IsRedacted and map is out of buffer space.
 */
 EFI_STATUS
-OfflineDumpRedactionMap_Mark(
-    IN OUT OFFLINE_DUMP_REDACTION_MAP* pMap,
-    IN BOOLEAN IsRedacted,
-    IN UINT64 BeginPageNum,
-    IN UINT64 EndPageNum
-);
+OfflineDumpRedactionMap_MarkRange (
+  IN OUT OFFLINE_DUMP_REDACTION_MAP  *pMap,
+  IN BOOLEAN                         IsRedacted,
+  IN UINT64                          BeginPageNum,
+  IN UINT64                          EndPageNum
+  );
 
 /*
 Returns TRUE if the specified page is redacted, FALSE otherwise.
@@ -120,10 +132,10 @@ This function is for testing a single page. Use
 OfflineDumpRedactionMap_GetFirstRedactedRange to test a range of pages.
 */
 BOOLEAN
-OfflineDumpRedactionMap_IsRedacted(
-    IN OFFLINE_DUMP_REDACTION_MAP const* pMap,
-    IN UINT64 PageNum
-);
+OfflineDumpRedactionMap_IsRedacted (
+  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
+  IN UINT64                            PageNum
+  );
 
 /*
 Finds the first redacted range in the specified page range.
@@ -141,20 +153,20 @@ Partitions the provided page range BeginPageNum..EndPageNum into three ranges:
   OfflineDumpRedactionMap_GetFirstRedactedRange again if this range is not empty).
 */
 OFFLINE_DUMP_REDACTION_MAP_RANGE
-OfflineDumpRedactionMap_GetFirstRedactedRange(
-    IN OFFLINE_DUMP_REDACTION_MAP const* pMap,
-    IN UINT64 BeginPageNum,
-    IN UINT64 EndPageNum
-);
+OfflineDumpRedactionMap_GetFirstRedactedRange (
+  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
+  IN UINT64                            BeginPageNum,
+  IN UINT64                            EndPageNum
+  );
 
 /*
 Returns the value of MaxPageNum that was passed to OfflineDumpRedactionMapInit, or 0
 if OfflineDumpRedactionMapInit failed.
 */
 UINT64
-OfflineDumpRedactionMap_MaxPageNumber(
-    IN OFFLINE_DUMP_REDACTION_MAP const* pMap
-);
+OfflineDumpRedactionMap_MaxPageNumber (
+  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap
+  );
 
 #ifdef __cplusplus
 } // extern "C"

@@ -7,21 +7,20 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 
-// (Value + DivisorMacro - 1) >> DivisorMacro_SHIFT
-#define DIVIDE_AND_ROUND_UP(Value, DivisorMacro) \
-    ((Value + DivisorMacro - 1u) >> (DivisorMacro##_SHIFT))
-
-#define BYTES_PER_CHUNK_SHIFT  12u
-#define BYTES_PER_CHUNK        (1u << BYTES_PER_CHUNK_SHIFT)
-
-typedef UINT32 CHUNK_NUM;
-
 typedef struct _offline_dump_redaction_map_CHUNK {
   CHUNK_NUM    Data[BYTES_PER_CHUNK / sizeof (CHUNK_NUM)];
 } CHUNK;
 STATIC_ASSERT (
                sizeof (CHUNK) == BYTES_PER_CHUNK,
                "sizeof(CHUNK) must be BYTES_PER_CHUNK"
+               );
+STATIC_ASSERT (
+               sizeof (CHUNK) == TABLE0_CHUNK_SIZE,
+               "sizeof(CHUNK) must be TABLE0_CHUNK_SIZE"
+               );
+STATIC_ASSERT (
+               TABLE0_CHUNK_SIZE == TABLE1_PER_TABLE0_CHUNK * sizeof (CHUNK_NUM),
+               "TABLE0_CHUNK_SIZE must be TABLE1_PER_TABLE0_CHUNK * sizeof(CHUNK_NUM)"
                );
 
 typedef struct {
@@ -30,6 +29,10 @@ typedef struct {
 STATIC_ASSERT (
                sizeof (TABLE1) % sizeof (CHUNK) == 0,
                "sizeof(TABLE1) must be a multiple of sizeof(CHUNK)"
+               );
+STATIC_ASSERT (
+               sizeof (TABLE1) == TABLE1_SIZE,
+               "sizeof(TABLE1) must equal TABLE1_SIZE"
                );
 
 typedef UINT64 ENTRY;
@@ -44,6 +47,10 @@ typedef struct {
 STATIC_ASSERT (
                sizeof (BITMAP) % sizeof (CHUNK) == 0,
                "sizeof(BITMAP) must be a multiple of sizeof(CHUNK)"
+               );
+STATIC_ASSERT (
+               sizeof (BITMAP) == BITMAP_SIZE,
+               "sizeof(BITMAP) must equal BITMAP_SIZE"
                );
 
 #define CHUNKS_PER_TABLE1  (sizeof(TABLE1) / sizeof(CHUNK))
@@ -117,18 +124,29 @@ PageNumToEntryShift (
   return (UINT8)(PageNum & (BITS_PER_ENTRY - 1));
 }
 
-// Returns &Table0[PageNum.Table0Index].
+// Returns pointer to Table0[PageNum.Table0Index].
 // Precondition: PageNum < pMap->MaxPageNum
 static CHUNK_NUM *
-PageNumToTable1ChunkNum (
-  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
-  IN UINT64                            PageNum
+PageNumToTable1ChunkNumPtr (
+  IN OFFLINE_DUMP_REDACTION_MAP  *pMap,
+  IN UINT64                      PageNum
   )
 {
   ASSERT (pMap->MaxPageNum <= MAX_BITS_PER_TABLE0); // Data corruption
   ASSERT (PageNum < pMap->MaxPageNum);              // Precondition
   CHUNK_NUM  *pTable0 = pMap->pBufferChunks[0].Data;
   return &pTable0[PageNumToToTable0Index (PageNum)];
+}
+
+// Returns Table0[PageNum.Table0Index].
+// Precondition: PageNum < pMap->MaxPageNum
+static CHUNK_NUM
+PageNumToTable1ChunkNum (
+  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
+  IN UINT64                            PageNum
+  )
+{
+  return *PageNumToTable1ChunkNumPtr ((OFFLINE_DUMP_REDACTION_MAP *)pMap, PageNum);
 }
 
 // Returns (TABLE1*)&pBufferChunks[ChunkNum]
@@ -144,9 +162,20 @@ GetChunkAsTable1 (
   return (TABLE1 *)&pMap->pBufferChunks[ChunkNum];
 }
 
-// Returns &Table1[PageNum.Table1Index]
+// Returns (TABLE1*)&pBufferChunks[ChunkNum]
+// Precondition: ChunkNum < pMap->MaxBufferChunks
+static TABLE1 const *
+GetChunkAsTable1Const (
+  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
+  IN CHUNK_NUM                         ChunkNum
+  )
+{
+  return GetChunkAsTable1 ((OFFLINE_DUMP_REDACTION_MAP *)pMap, ChunkNum);
+}
+
+// Returns pointer to Table1[PageNum.Table1Index]
 static CHUNK_NUM *
-PageNumToBitmapChunkNum (
+PageNumToBitmapChunkNumPtr (
   IN TABLE1  *pTable1,
   IN UINT64  PageNum
   )
@@ -154,17 +183,38 @@ PageNumToBitmapChunkNum (
   return &pTable1->BitmapChunkNum[PageNumToTable1Index (PageNum)];
 }
 
+// Returns Table1[PageNum.Table1Index]
+static CHUNK_NUM
+PageNumToBitmapChunkNum (
+  IN TABLE1 const  *pTable1,
+  IN UINT64        PageNum
+  )
+{
+  return pTable1->BitmapChunkNum[PageNumToTable1Index (PageNum)];
+}
+
 // Returns (BITMAP*)&pBufferChunks[ChunkNum]
 // Precondition: ChunkNum < pMap->MaxBufferChunks
 static BITMAP *
 GetChunkAsBitmap (
-  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
-  IN CHUNK_NUM                         ChunkNum
+  IN OFFLINE_DUMP_REDACTION_MAP  *pMap,
+  IN CHUNK_NUM                   ChunkNum
   )
 {
   ASSERT (ChunkNum + (CHUNK_NUM)(sizeof (BITMAP) / sizeof (CHUNK)) > ChunkNum);
   ASSERT (ChunkNum + (CHUNK_NUM)(sizeof (BITMAP) / sizeof (CHUNK)) <= pMap->MaxBufferChunks);
   return (BITMAP *)&pMap->pBufferChunks[ChunkNum];
+}
+
+// Returns (BITMAP*)&pBufferChunks[ChunkNum]
+// Precondition: ChunkNum < pMap->MaxBufferChunks
+static BITMAP const *
+GetChunkAsBitmapConst (
+  IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
+  IN CHUNK_NUM                         ChunkNum
+  )
+{
+  return GetChunkAsBitmap ((OFFLINE_DUMP_REDACTION_MAP *)pMap, ChunkNum);
 }
 
 static void
@@ -243,7 +293,7 @@ OfflineDumpRedactionMap_Init (
 }
 
 EFI_STATUS
-OfflineDumpRedactionMap_Mark (
+OfflineDumpRedactionMap_MarkRange (
   IN OUT OFFLINE_DUMP_REDACTION_MAP  *pMap,
   IN BOOLEAN                         IsRedacted,
   IN UINT64                          BeginPageNum,
@@ -276,7 +326,7 @@ OfflineDumpRedactionMap_Mark (
 
       // When redacting, we allocate new TABLE1/BITMAP if not already allocated.
 
-      CHUNK_NUM * const  pTable1ChunkNum = PageNumToTable1ChunkNum (pMap, PageNum);
+      CHUNK_NUM * const  pTable1ChunkNum = PageNumToTable1ChunkNumPtr (pMap, PageNum);
       Table1ChunkNum = *pTable1ChunkNum;
       if (Table1ChunkNum == 0) {
         if (pMap->MaxBufferChunks < pMap->UsedBufferChunks + CHUNKS_PER_TABLE1) {
@@ -291,7 +341,7 @@ OfflineDumpRedactionMap_Mark (
         ZeroMem (pTable1, sizeof (*pTable1));
       }
 
-      CHUNK_NUM * const  pBitmapChunkNum = PageNumToBitmapChunkNum (GetChunkAsTable1 (pMap, Table1ChunkNum), PageNum);
+      CHUNK_NUM * const  pBitmapChunkNum = PageNumToBitmapChunkNumPtr (GetChunkAsTable1 (pMap, Table1ChunkNum), PageNum);
       BitmapChunkNum = *pBitmapChunkNum;
       if (BitmapChunkNum == 0) {
         if (pMap->MaxBufferChunks < pMap->UsedBufferChunks + CHUNKS_PER_BITMAP) {
@@ -310,7 +360,7 @@ OfflineDumpRedactionMap_Mark (
       // TABLE1 or BITMAP is not already allocated then there are no redacted pages
       // in the corresponding address range and we can just skip it.
 
-      CHUNK_NUM const  Table1ChunkNum = *PageNumToTable1ChunkNum (pMap, PageNum);
+      CHUNK_NUM const  Table1ChunkNum = PageNumToTable1ChunkNum (pMap, PageNum);
       if (Table1ChunkNum == 0) {
         // No redacted pages in this Table1's range. Skip to next Table1's range.
         UINT64 const  NextTable1PageNum = ((PageNum >> BITS_PER_TABLE1_SHIFT) + 1) << BITS_PER_TABLE1_SHIFT;
@@ -318,7 +368,7 @@ OfflineDumpRedactionMap_Mark (
         continue;
       }
 
-      BitmapChunkNum = *PageNumToBitmapChunkNum (GetChunkAsTable1 (pMap, Table1ChunkNum), PageNum);
+      BitmapChunkNum = PageNumToBitmapChunkNum (GetChunkAsTable1 (pMap, Table1ChunkNum), PageNum);
       if (BitmapChunkNum == 0) {
         // No redacted pages in this Bitmap's range. Skip to next Bitmap's range.
         PageNum = NextBitmapPageNum;         // May be greater than EndPageNum.
@@ -401,31 +451,60 @@ OfflineDumpRedactionMap_Mark (
   return EFI_SUCCESS;
 }
 
+void
+OfflineDumpRedactionMap_ExposePage (
+  IN OUT OFFLINE_DUMP_REDACTION_MAP  *pMap,
+  IN UINT64                          PageNum
+  )
+{
+  if (PageNum >= pMap->MaxPageNum) {
+    return; // PageNum is beyond max (not redacted).
+  }
+
+  CHUNK_NUM const  Table1ChunkNum = PageNumToTable1ChunkNum (pMap, PageNum);
+  if (Table1ChunkNum == 0) {
+    return; // No redacted pages in this Table1's range.
+  }
+
+  CHUNK_NUM const  BitmapChunkNum = PageNumToBitmapChunkNum (
+                                                             GetChunkAsTable1Const (pMap, Table1ChunkNum),
+                                                             PageNum
+                                                             );
+  if (BitmapChunkNum == 0) {
+    return; // No redacted pages in this Bitmap's range.
+  }
+
+  BITMAP * const  pBitmap    = GetChunkAsBitmap (pMap, BitmapChunkNum);
+  ENTRY * const   pEntry     = &pBitmap->Entry[PageNumToBitmapIndex (PageNum)];
+  UINT8 const     EntryShift = PageNumToEntryShift (PageNum);
+
+  *pEntry &= ~((ENTRY)1 << EntryShift);      // Clear the bit.
+}
+
 BOOLEAN
 OfflineDumpRedactionMap_IsRedacted (
   IN OFFLINE_DUMP_REDACTION_MAP const  *pMap,
   IN UINT64                            PageNum
   )
 {
-  AssertMapValid (pMap);
   if (PageNum >= pMap->MaxPageNum) {
     return FALSE;
   }
 
-  CHUNK_NUM const  Table1ChunkNum = *PageNumToTable1ChunkNum (pMap, PageNum);
+  CHUNK_NUM const  Table1ChunkNum = PageNumToTable1ChunkNum (pMap, PageNum);
   if (Table1ChunkNum == 0) {
     return FALSE;
   }
 
-  CHUNK_NUM const  BitmapChunkNum = *PageNumToBitmapChunkNum (
-                                                              GetChunkAsTable1 ((OFFLINE_DUMP_REDACTION_MAP *)pMap, Table1ChunkNum),
-                                                              PageNum
-                                                              );
+  CHUNK_NUM const  BitmapChunkNum = PageNumToBitmapChunkNum (
+                                                             GetChunkAsTable1Const (pMap, Table1ChunkNum),
+                                                             PageNum
+                                                             );
   if (BitmapChunkNum == 0) {
     return FALSE;
   }
 
-  BITMAP const * const  pBitmap    = GetChunkAsBitmap (pMap, BitmapChunkNum);
+  BITMAP const * const  pBitmap    = GetChunkAsBitmapConst (pMap, BitmapChunkNum);
   ENTRY const           Entry      = pBitmap->Entry[PageNumToBitmapIndex (PageNum)];
   UINT8 const           EntryShift = PageNumToEntryShift (PageNum);
   return ((Entry >> EntryShift) & 1) != 0;
@@ -472,7 +551,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange (
     // TABLE1 or BITMAP is not already allocated then there are no redacted pages
     // in the corresponding address range and we can just skip it.
 
-    CHUNK_NUM const  Table1ChunkNum = *PageNumToTable1ChunkNum (pMap, PageNum);
+    CHUNK_NUM const  Table1ChunkNum = PageNumToTable1ChunkNum (pMap, PageNum);
     if (Table1ChunkNum == 0) {
       // NULL table is considered as full of 0s.
 
@@ -489,10 +568,10 @@ OfflineDumpRedactionMap_GetFirstRedactedRange (
       continue;
     }
 
-    CHUNK_NUM const  BitmapChunkNum = *PageNumToBitmapChunkNum (
-                                                                GetChunkAsTable1 ((OFFLINE_DUMP_REDACTION_MAP *)pMap, Table1ChunkNum),
-                                                                PageNum
-                                                                );
+    CHUNK_NUM const  BitmapChunkNum = PageNumToBitmapChunkNum (
+                                                               GetChunkAsTable1Const (pMap, Table1ChunkNum),
+                                                               PageNum
+                                                               );
     if (BitmapChunkNum == 0) {
       // NULL bitmap is considered as full of 0s.
 
@@ -508,10 +587,10 @@ OfflineDumpRedactionMap_GetFirstRedactedRange (
       continue;
     }
 
-    static ENTRY const  AllBitsClear     = (ENTRY)0;
-    static ENTRY const  AllBitsSet       = ~(ENTRY)0;
-    BITMAP * const      pBitmap          = GetChunkAsBitmap (pMap, BitmapChunkNum);
-    UINT64 const        BitmapEndPageNum = MIN (ClampedEndPageNum, NextBitmapPageNum);
+    static ENTRY const    AllBitsClear     = (ENTRY)0;
+    static ENTRY const    AllBitsSet       = ~(ENTRY)0;
+    BITMAP const * const  pBitmap          = GetChunkAsBitmapConst (pMap, BitmapChunkNum);
+    UINT64 const          BitmapEndPageNum = MIN (ClampedEndPageNum, NextBitmapPageNum);
 
 IsRedactedSet:;
 

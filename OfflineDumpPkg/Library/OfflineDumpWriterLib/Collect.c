@@ -96,6 +96,8 @@ OfflineDumpWriteWithDumpInfo (
   IN OFFLINE_DUMP_PROVIDER_DUMP_INFO const  *pDumpInfo
   )
 {
+  // This function is the scope for the OFFLINE_DUMP_WRITER.
+
   OFFLINE_DUMP_PROVIDER_END_INFO  EndInfo      = { 0 };
   OFFLINE_DUMP_WRITER             *pDumpWriter = NULL;
   RAW_DUMP_SECTION_INFORMATION    Information;
@@ -396,9 +398,33 @@ OfflineDumpWrite (
       break;
   }
 
+  if ((DumpInfo.pCpuContexts == NULL) && (DumpInfo.CpuContextCount != 0)) {
+    DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.pCpuContexts == NULL but CpuContextCount != 0\n");
+    EndInfo.Status = EFI_INVALID_PARAMETER;
+    goto Done;
+  }
+
+  if (DumpInfo.CpuContextSize % 8 != 0) {
+    DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.CpuContextSize %u is not a multiple of 8\n", DumpInfo.CpuContextSize);
+    EndInfo.Status = EFI_INVALID_PARAMETER;
+    goto Done;
+  }
+
   if (DumpInfo.Flags & (RAW_DUMP_HEADER_DUMP_VALID | RAW_DUMP_HEADER_INSUFFICIENT_STORAGE | RAW_DUMP_HEADER_IS_HYPERV_DATA_PROTECTED)) {
     DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.Flags 0x%X contains a prohibited flag\n", DumpInfo.Flags);
     EndInfo.Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  if ((DumpInfo.pSecureCpuContexts == NULL) && (DumpInfo.SecureCpuContextCount != 0)) {
+    DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.pSecureCpuContexts == NULL but SecureCpuContextCount != 0\n");
+    EndInfo.Status = EFI_INVALID_PARAMETER;
+    goto Done;
+  }
+
+  if (DumpInfo.SecureCpuContextSize % 8 != 0) {
+    DEBUG_PRINT (DEBUG_ERROR, "DumpInfo.SecureCpuContextSize %u is not a multiple of 8\n", DumpInfo.SecureCpuContextSize);
+    EndInfo.Status = EFI_INVALID_PARAMETER;
     goto Done;
   }
 
@@ -483,6 +509,11 @@ OfflineDumpWrite (
           DEBUG_PRINT (DEBUG_ERROR, "Redaction required but SecureConfiguration not present. Dump cannot be written.\n");
           EndInfo.Status = EFI_INVALID_PARAMETER;
           goto Done;
+        }
+
+        if (DumpInfo.CpuContextCount != DumpInfo.SecureCpuContextCount) {
+          // Not fatal.
+          DEBUG_PRINT (DEBUG_WARN, "CpuContextCount != SecureCpuContextCount.\n");
         }
 
         DEBUG_PRINT (DEBUG_ERROR, "SecureConfiguration parsing not yet implemented. Dump cannot be written.\n");
