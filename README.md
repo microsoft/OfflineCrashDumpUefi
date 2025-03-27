@@ -1,5 +1,9 @@
 # Offline Crash Dump UEFI
 
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+SPDX-License-Identifier: [BSD-2-Clause-Patent](LICENSE)
+
 This project contains definitions and code to aid firmware developers in their implementation of
 [Offline Crash Dump](#background) (OffCD).
 

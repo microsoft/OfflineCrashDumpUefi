@@ -1,4 +1,7 @@
 /** @file
+  Copyright (c) Microsoft Corporation. All rights reserved.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
   Microsoft Offline Dump provider protocol - implemented by platform ISV.
 
   The ISV implements this protocol to provide dump information to the
