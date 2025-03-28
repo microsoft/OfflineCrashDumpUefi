@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <Library/OfflineDumpWriter.h>
+
+#include <Library/OfflineDumpPageSize.h>
 #include <Library/OfflineDumpEncryptor.h>
 #include <Library/OfflineDumpVariables.h>
 
@@ -18,6 +20,8 @@
 #include <Library/UefiLib.h>
 
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
+
+STATIC_ASSERT(OD_PAGE_SIZE <= EFI_PAGE_SIZE, "OD_PAGE_SIZE must be <= EFI_PAGE_SIZE");
 
 // For use in printf format values.
 typedef long long unsigned llu_t;
@@ -424,7 +428,6 @@ ODW_EnsureCurrentBufferInfo (
 // EncryptSize must be a multiple of SectionAlign and must fit into pCurrentBufferInfo.
 // Encrypts the specified data into pCurrentBufferInfo.
 // Does NOT increment CurrentBufferInfoUsed.
-// On error, zeroes the corresponding part of pCurrentBufferInfo and sets LastWriteError.
 static void
 ODW_EncryptIntoCurrentBufferInfo (
   IN OUT OFFLINE_DUMP_WRITER  *pDumpWriter,
