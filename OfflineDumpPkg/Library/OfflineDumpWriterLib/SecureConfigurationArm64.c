@@ -15,7 +15,7 @@
 #define DEBUG_PRINT(bits, fmt, ...)  _DEBUG_PRINT(bits, "%a: " fmt, __func__, ##__VA_ARGS__)
 
 #define ENTRIES_PER_TABLE_SHIFT        9 // 2^9 entries = 512 entries = 4KB granule / 8 bytes per entry
-#define CONCATENATED_TABLES_MAX_SHIFT  4
+#define CONCATENATED_TABLES_MAX_SHIFT  4 // Max of 16 (2^4) concatenated tables.
 
 typedef long long unsigned llu_t; // For printing UINT64s
 
@@ -32,6 +32,7 @@ typedef struct {
   UINT16    Res0;
   UINT32    Res1;
 } OFFDUMP_HEADER;
+STATIC_ASSERT (sizeof (OFFDUMP_HEADER) == 0x10, "OFFDUMP_HEADER size mismatch");
 
 typedef enum OFFDUMP_ENTRY_TYPE {
   OFFDUMP_ENTRY_TYPE_INVALID        = 0,
@@ -39,6 +40,7 @@ typedef enum OFFDUMP_ENTRY_TYPE {
   OFFDUMP_ENTRY_TYPE_MEMLIST        = 2,
   OFFDUMP_ENTRY_TYPE_S2PT           = 3
 } OFFDUMP_ENTRY_TYPE;
+STATIC_ASSERT (sizeof (OFFDUMP_ENTRY_TYPE) == 4, "OFFDUMP_ENTRY_TYPE size mismatch");
 
 typedef struct OFFDUMP_ENTRY {
   UINT32    EntryCrc32;
@@ -60,6 +62,7 @@ typedef struct OFFDUMP_ENTRY {
   UINT16    Res0_2;     // Reserved.
   UINT32    Res0_3;     // Reserved.
 } OFFDUMP_ENTRY;
+STATIC_ASSERT (sizeof (OFFDUMP_ENTRY) == 0x10, "OFFDUMP_ENTRY size mismatch");
 
 // There will be no more than one Scratch Buffer entry.
 typedef struct OFFDUMP_ENTRY_SCRATCH_BUFFER {
@@ -69,6 +72,7 @@ typedef struct OFFDUMP_ENTRY_SCRATCH_BUFFER {
   UINT32    BufferSize;     // Multiple of page size.
   UINT32    Res0;           // Reserved.
 } OFFDUMP_ENTRY_SCRATCH_BUFFER;
+STATIC_ASSERT (sizeof (OFFDUMP_ENTRY_SCRATCH_BUFFER) == 0x18, "OFFDUMP_ENTRY_SCRATCH_BUFFER size mismatch");
 
 // There will be one Memlist entry. It will contain non-overlapping items.
 typedef struct OFFDUMP_ENTRY_MEMLIST {
@@ -79,11 +83,13 @@ typedef struct OFFDUMP_ENTRY_MEMLIST {
   UINT16    Res0_1;         // Reserved.
   UINT32    ItemsCRC;       // CRC of the MEMLIST_ITEM array.
 } OFFDUMP_ENTRY_MEMLIST;
+STATIC_ASSERT (sizeof (OFFDUMP_ENTRY_MEMLIST) == 0x10, "OFFDUMP_ENTRY_MEMLIST size mismatch");
 
 typedef struct OFFDUMP_ENTRY_MEMLIST_ITEM {
   UINT64    BaseSpa;     // Physical address, multiple of page size.
   UINT64    Size;        // Region size, multiple of page size
 } OFFDUMP_ENTRY_MEMLIST_ITEM;
+STATIC_ASSERT (sizeof (OFFDUMP_ENTRY_MEMLIST_ITEM) == 0x10, "OFFDUMP_ENTRY_MEMLIST_ITEM size mismatch");
 
 // There will be one S2PT item.
 typedef struct OFFDUMP_ENTRY_S2PT {
@@ -92,6 +98,7 @@ typedef struct OFFDUMP_ENTRY_S2PT {
   UINT64    VTCR_EL2;
   UINT64    VTTBR_EL2;
 } OFFDUMP_ENTRY_S2PT;
+STATIC_ASSERT (sizeof (OFFDUMP_ENTRY_S2PT) == 0x18, "OFFDUMP_ENTRY_S2PT size mismatch");
 
 /*
 ARM64 CPU structures:
@@ -139,30 +146,30 @@ typedef struct VTTBR_EL2 {
   UINT64    BADDR :47;   // Translation table base address [47:1]
   UINT64    VMID  :16;   // The VMID for the translation table
 } VTTBR_EL2;
-STATIC_ASSERT (sizeof (VTTBR_EL2) == 8, "VTCR_EL2 size mismatch");
+STATIC_ASSERT (sizeof (VTTBR_EL2) == sizeof (UINT64), "VTCR_EL2 size mismatch");
 
 // Get output address for the Page/Block/Table descriptor, assuming 4KB granule, 48-bit OA.
 // If this is a block descriptor, caller needs to clear bits [15:12].
 static UINT64
 DescriptorOutputAddress48 (
-  UINT64  TableDescriptor
+  UINT64  Descriptor
   )
 {
   // Bits  [47:12] of the address are in bits [47:12] of the descriptor.
-  ASSERT (TableDescriptor & 1); // Valid descriptor.
-  return (TableDescriptor & TT_ADDRESS_MASK_DESCRIPTION_TABLE);
+  ASSERT (Descriptor & 1); // Valid descriptor.
+  return (Descriptor & TT_ADDRESS_MASK_DESCRIPTION_TABLE);
 }
 
 // Get output address for the Page/Block/Table descriptor, assuming 4KB granule, 52-bit OA.
 // If this is a block descriptor, caller needs to clear bits [15:12].
 static UINT64
 DescriptorOutputAddress52 (
-  UINT64  TableDescriptor
+  UINT64  Descriptor
   )
 {
   // Bits  [51:12] of the address are in bits [9:8][49:12] of the descriptor.
-  ASSERT (TableDescriptor & 1); // Valid descriptor.
-  return (TableDescriptor & 0x0003FFFFFFFFF000) | ((TableDescriptor & 0x300) << 42);
+  ASSERT (Descriptor & 1); // Valid descriptor.
+  return (Descriptor & 0x0003FFFFFFFFF000) | ((Descriptor & 0x300) << 42);
 }
 
 /*
@@ -709,7 +716,7 @@ AddS2Pt (
   // AARCH64 allows 16..8192 entries for L3, 2..8192 for L2-L0, and 2..512 for L(-1).
   // These rules allow 1..8192 entries for all table levels.
 
-  // For AdditionalTableLevels=0 (StartLevel=3): minimum is 1<<0 entries.
+  // For AdditionalTableLevels=0 (StartLevel=3): minimum we allow is 1<<0 entries.
   // Each additional table level adds ENTRIES_PER_TABLE_SHIFT bits.
   // Maximum is 1<<13 entries (1<<9 entries/table * 1<<4 concatenated tables).
   UINT8 const  IpaBitsMin = OD_PAGE_SIZE_SHIFT + (ENTRIES_PER_TABLE_SHIFT * AdditionalTableLevels);
@@ -727,7 +734,7 @@ AddS2Pt (
   } else if (IpaBits > IpaBitsMax) {
     DEBUG_PRINT (
                  DEBUG_ERROR,
-                 "Unsupported VTCR_EL2.T0SZ %u < minimum %u for StartLevel %u\n",
+                 "Unsupported VTCR_EL2.T0SZ %u < minimum %u for StartLevel %d\n",
                  Vtcr.T0SZ,
                  64 - IpaBitsMax,
                  3 - AdditionalTableLevels
