@@ -123,34 +123,122 @@ FindOfflineDumpRawBlockDeviceHandleForTesting (
   );
 
 /**
-Determines the size of the working buffer needed by the offline dump writer to
-perform offline dump memory redaction. The value returned in pScratchBufferLength
+Determines the length of the working buffer needed by the offline dump writer to
+perform offline dump memory redaction. The value returned in pLength
 can be used for the "Scratch Buffer Length" field of the "Offline Dump Capabilities"
 table.
 
 - HighestPhysicalAddress: The highest physical address in the memory map provided to
   Windows, e.g. 0x21FFFFFFFF (128GB of memory + 8GB of holes = 136GB-1).
-- pScratchBufferLength: Receives the size of the working buffer needed, in bytes.
+  HighestPhysicalAddress + 1 must be a multiple of 4096 (i.e.
+  HighestPhysicalAddress must end with 0xFFF).
 
-This function will return an error if HighestPhysicalAddress is greater than about
-127TB because the size of the required scratch buffer would not fit in a UINT32.
+- pLength: Receives the length of the working buffer needed, in bytes.
 
-This function provides accurate results when the memory map starts at an address
-less than 4GB and has no 4GB holes (or larger). If the memory map has large holes,
-this function will return a value that is larger than necessary.
+Returns:
 
-For example, on a system with 128GB of memory and ~8GB of scattered holes in the
-memory map, the highest physical address might be 0x21FFFFFFFF. This function will
-compute the scratch buffer length 4464640 (4360KB) as the sum of:
+- EFI_SUCCESS if the length was computed successfully.
+- EFI_INVALID_PARAMETER if HighestPhysicalAddress is greater than 0x7FFDFFFFFFFF
+  or if HighestPhysicalAddress + 1 is not a multiple of 4096.
+
+Remarks:
+
+This function should be used when the memory map provided to Windows has no
+large gaps (holes 4GB or larger). If the memory map has large gaps, the result
+returned by this function may be larger than necessary. In that case, the caller
+should use the OfflineDumpRedactionScratchBufferLength_* functions to compute
+the required length instead of using this function.
+
+Example:
+
+On a system with 128GB of memory and ~8GB of scattered holes in the memory map, the
+highest physical address might be 136GB-1 = 0x21FFFFFFFF. For 0x21FFFFFFFF, this
+function will compute the scratch buffer length 4464640 (4360KB) as the sum of:
 
   - 4KB * ceil(HighestPhysicalAddress / 2^52) = 4KB * 1 = 4KB
   - 4KB * Number of 4TB regions touched by the memory map = 4KB * 1 = 4KB
   - 128KB * Number of 4GB regions touched by the memory map = 128KB * 34 = 4352KB.
-  */
+*/
 EFI_STATUS
 GetOfflineDumpRedactionScratchBufferLength (
   IN  UINT64  HighestPhysicalAddress,
   OUT UINT32  *pLength
+  );
+
+/**
+Used with OfflineDumpRedactionScratchBufferLength_* functions to compute the length of the
+working buffer needed by the offline dump writer to perform offline dump memory redaction.
+The value returned by OfflineDumpRedactionScratchBufferLength_Get can be used for the
+"Scratch Buffer Length" field of the "Offline Dump Capabilities" table.
+
+The OfflineDumpRedactionScratchBufferLength_* functions should be used when the
+memory map has large gaps (holes of 4GB or more). In simple cases when the
+memory map does not have any large gaps, the length can be computed using
+GetOfflineDumpRedactionScratchBufferLength.
+
+Usage:
+
+- Declare a context (OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT) variable.
+- Call OfflineDumpRedactionScratchBufferLength_Init to initialize the context.
+- Call OfflineDumpRedactionScratchBufferLength_AddMemRange once for each range of memory in
+  the memory map, in order from lowest address to highest address.
+- Call OfflineDumpRedactionScratchBufferLength_Get to get the length of the scratch buffer.
+
+Note that the ranges provided to OfflineDumpRedactionScratchBufferLength_AddMemRange must be
+non-overlapping and must be provided in order of the range's base address (lowest to highest).
+*/
+typedef struct {
+  INT64      LastPageNum;
+  UINT32     BitmapCount;
+  UINT16     Table1Count;
+  UINT8      Initialized;
+  BOOLEAN    AnyErrors;
+} OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT;
+
+/**
+Initializes the OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT for computing the
+length of the scratch buffer needed for redaction.
+
+For details, see OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT.
+*/
+void
+OfflineDumpRedactionScratchBufferLength_Init (
+  OUT OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT  *pContext
+  );
+
+/**
+Updates the OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT with the specified
+range of memory. This must be called with non-overlapping ranges of memory, ordered by address
+(lowest to highest). Addresses and lengths must be multiples of 4KB.
+
+For details, see OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT.
+*/
+EFI_STATUS
+OfflineDumpRedactionScratchBufferLength_AddMemRange (
+  IN OUT OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT  *pContext,
+  IN UINT64                                                    BaseAddress,
+  IN UINT64                                                    Length
+  );
+
+/**
+Computes the length of the scratch buffer needed for redaction, in bytes. This function
+must be called after all ranges of memory have been added using
+OfflineDumpRedactionScratchBufferLength_AddMemRange.
+
+For details, see OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT.
+
+This function will return an error if the context is not valid (e.g. not initialized) or
+if any errors have been returned by any call to AddMemRange.
+
+This may return a length larger than 4GB. The current "Offline Dump Capabilities"
+table does not support scratch buffers larger than 4GB, so the caller should
+check the returned length and not use it with the current table if it is larger
+than 4GB.
+*/
+EFI_STATUS
+OfflineDumpRedactionScratchBufferLength_Get (
+  IN OFFLINE_DUMP_REDACTION_SCRATCH_BUFFER_LENGTH_CONTEXT const  *pContext,
+  OUT UINT64                                                     *pLength
   );
 
 #endif // _included_Library_OfflineDumpLib_h

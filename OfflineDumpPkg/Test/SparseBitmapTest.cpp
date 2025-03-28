@@ -34,7 +34,7 @@ ClearAndCheck(OFFLINE_DUMP_REDACTION_MAP& map, UINT64 beginPageNum, UINT64 endPa
     TestAssert(beginPageNum <= endPageNum);
     auto const beforeWasSet = OfflineDumpRedactionMap_IsRedacted(&map, beginPageNum - 1);
     auto const afterWasSet = OfflineDumpRedactionMap_IsRedacted(&map, endPageNum);
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, beginPageNum, endPageNum));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, beginPageNum, endPageNum));
     TestAssert(beforeWasSet == OfflineDumpRedactionMap_IsRedacted(&map, beginPageNum - 1));
     TestAssert(afterWasSet == OfflineDumpRedactionMap_IsRedacted(&map, endPageNum));
 
@@ -83,7 +83,7 @@ SetAndCheck(OFFLINE_DUMP_REDACTION_MAP& map, UINT64 beginPageNum, UINT64 endPage
     TestAssert(beginPageNum <= endPageNum);
     auto const beforeWasSet = OfflineDumpRedactionMap_IsRedacted(&map, beginPageNum - 1);
     auto const afterWasSet = OfflineDumpRedactionMap_IsRedacted(&map, endPageNum);
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, beginPageNum, endPageNum));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, beginPageNum, endPageNum));
     TestAssert(beforeWasSet == OfflineDumpRedactionMap_IsRedacted(&map, beginPageNum - 1));
     TestAssert(afterWasSet == OfflineDumpRedactionMap_IsRedacted(&map, endPageNum));
 
@@ -161,7 +161,7 @@ InitAndValidateMap(UINT64 const* ranges, unsigned pairs)
 
     for (unsigned i = 0; i != pairs * 2; i += 2)
     {
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, ranges[i], ranges[i + 1]));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, ranges[i], ranges[i + 1]));
     }
 
     ValidateMap(map, ranges, pairs);
@@ -190,7 +190,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.BeginRedactedPageNum == MaxPageNo);
     TestAssert(range.EndRedactedPageNum == MaxPageNo);
 
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 10, 20));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 10, 20));
     ValidateMap(map, { 10, 20 });
 
     // Test case: Single redacted range
@@ -208,7 +208,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == 19);
 
     // map = [10..20], [30..70]
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 30, 70));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 30, 70));
     ValidateMap(map, { 10, 20, 30, 70 });
     // Test case: Multiple redacted ranges
     range = OfflineDumpRedactionMap_GetFirstRedactedRange(&map, 0, MaxPageNo);
@@ -244,11 +244,11 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.BeginRedactedPageNum == 10);
     TestAssert(range.EndRedactedPageNum == 20);
 
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, 10, 15));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, 10, 15));
     ValidateMap(map, { 15, 20, 30, 70 });
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, 10, 20));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, 10, 20));
     ValidateMap(map, { 30, 70 });
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, 30, 70));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, 30, 70));
     ValidateMap(map, nullptr, 0);
 
     // Test case: Clear all redacted ranges and check again
@@ -257,7 +257,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == MaxPageNo);
 
     // map = [0..5]
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 0, 5));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 0, 5));
     ValidateMap(map, { 0, 5 });
 
     // Test case: Boundary conditions at the start of the map
@@ -266,7 +266,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == 5);
 
     // map = [0..5], [Max - 5..Max]
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo - 5, MaxPageNo));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo - 5, MaxPageNo));
     ValidateMap(map, { 0, 5, MaxPageNo - 5, MaxPageNo });
 
     // Test case: Boundary conditions at the end of the map
@@ -275,7 +275,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == MaxPageNo);
 
     // map = [0..5] [15..25] [Max - 5..Max]
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 15, 25));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 15, 25));
     ValidateMap(map, { 0, 5, 15, 25, MaxPageNo - 5, MaxPageNo });
 
     // Test case: Overlapping redacted ranges
@@ -284,7 +284,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == 25);
 
     // map = [0..5] [15..25] [Max - 5..Max]
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 50, 50));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 50, 50));
     ValidateMap(map, { 0, 5, 15, 25, MaxPageNo - 5, MaxPageNo});
 
     // Test case: 0 page range
@@ -296,9 +296,9 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == 50);
 
     // map = [0..5] [15..25] [Max - 5..Max]
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 60, 70));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 60, 70));
     ValidateMap(map, { 0, 5, 15, 25, 60, 70, MaxPageNo - 5, MaxPageNo });
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 80, 90));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 80, 90));
     ValidateMap(map, { 0, 5, 15, 25, 60, 70, 80, 90, MaxPageNo - 5, MaxPageNo });
 
     // Test case: Non-redacted pages in between redacted ranges
@@ -311,7 +311,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
     TestAssert(range.EndRedactedPageNum == 90);
 
     // Test case: Large ranges
-    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 100, 1000));
+    TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 100, 1000));
     ValidateMap(map, { 0, 5, 15, 25, 60, 70, 80, 90, 100, 1000, MaxPageNo - 5, MaxPageNo });
     range = OfflineDumpRedactionMap_GetFirstRedactedRange(&map, 100, 1000);
     TestAssert(range.BeginRedactedPageNum == 100);
@@ -319,7 +319,7 @@ OfflineDumpRedactionMap_GetFirstRedactedRange_Test()
 }
 
 void
-OfflineDumpRedactionMap_Mark_Test()
+OfflineDumpRedactionMap_MarkRange_Test()
 {
     {
         OFFLINE_DUMP_REDACTION_MAP map;
@@ -331,34 +331,34 @@ OfflineDumpRedactionMap_Mark_Test()
         // Clearing should succeed as long as begin <= end && end <= MaxPageNo.
 
         // Check begin <= end.
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, FALSE, 0, 1) == EFI_SUCCESS);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, FALSE, 1, 1) == EFI_SUCCESS);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, FALSE, 2, 1) == EFI_INVALID_PARAMETER);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, FALSE, 0, 1) == EFI_SUCCESS);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, FALSE, 1, 1) == EFI_SUCCESS);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, FALSE, 2, 1) == EFI_INVALID_PARAMETER);
 
         // Check end <= MaxPageNo.
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo - 1, MaxPageNo - 1) == EFI_SUCCESS);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo - 1, MaxPageNo + 0) == EFI_SUCCESS);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo - 1, MaxPageNo + 1) == EFI_INVALID_PARAMETER);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo - 1, MaxPageNo - 1) == EFI_SUCCESS);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo - 1, MaxPageNo + 0) == EFI_SUCCESS);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo - 1, MaxPageNo + 1) == EFI_INVALID_PARAMETER);
 
 
-        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo + 1, MaxPageNo + 1));
-        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo, MaxPageNo + 1));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, 0, 0));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo, MaxPageNo));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, 0, 1));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo - 1, MaxPageNo));
+        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo + 1, MaxPageNo + 1));
+        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo, MaxPageNo + 1));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, 0, 0));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo, MaxPageNo));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, 0, 1));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo - 1, MaxPageNo));
 
         // Setting should fail because there is no room for bitmaps (unless it's a no-op).
 
         // Check begin <= end.
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, TRUE, 0, 1) == EFI_OUT_OF_RESOURCES);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, TRUE, 1, 1) == EFI_SUCCESS);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, TRUE, 2, 1) == EFI_INVALID_PARAMETER);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, TRUE, 0, 1) == EFI_OUT_OF_RESOURCES);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, TRUE, 1, 1) == EFI_SUCCESS);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, TRUE, 2, 1) == EFI_INVALID_PARAMETER);
 
         // Check end <= MaxPageNo.
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo - 1, MaxPageNo - 1) == EFI_SUCCESS);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo - 1, MaxPageNo + 0) == EFI_OUT_OF_RESOURCES);
-        TestAssert(OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo - 1, MaxPageNo + 1) == EFI_INVALID_PARAMETER);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo - 1, MaxPageNo - 1) == EFI_SUCCESS);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo - 1, MaxPageNo + 0) == EFI_OUT_OF_RESOURCES);
+        TestAssert(OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo - 1, MaxPageNo + 1) == EFI_INVALID_PARAMETER);
     }
 
     {
@@ -369,16 +369,16 @@ OfflineDumpRedactionMap_Mark_Test()
         TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Init(&map, &g_mapBuf, sizeof(g_mapBuf), MaxPageNo));
 
         // Clearing should succeed as long as the ending page# is less than MaxPageNo.
-        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo + 1, MaxPageNo + 1));
-        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo, MaxPageNo + 1));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, 0, 0));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, FALSE, MaxPageNo, MaxPageNo));
+        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo + 1, MaxPageNo + 1));
+        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo, MaxPageNo + 1));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, 0, 0));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, FALSE, MaxPageNo, MaxPageNo));
 
         // Setting should succeed because there is room for bitmaps.
-        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo + 1, MaxPageNo + 1));
-        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo, MaxPageNo + 1));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, 0, 0));
-        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_Mark(&map, TRUE, MaxPageNo, MaxPageNo));
+        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo + 1, MaxPageNo + 1));
+        TestAssert(EFI_INVALID_PARAMETER == OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo, MaxPageNo + 1));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, 0, 0));
+        TestAssert(EFI_SUCCESS == OfflineDumpRedactionMap_MarkRange(&map, TRUE, MaxPageNo, MaxPageNo));
 
         // Within the same bitmap, start of address range.
 
@@ -481,6 +481,6 @@ void
 SparseBitmapTest()
 {
     OfflineDumpRedactionMap_Init_Test();
-    OfflineDumpRedactionMap_Mark_Test();
+    OfflineDumpRedactionMap_MarkRange_Test();
     OfflineDumpRedactionMap_GetFirstRedactedRange_Test();
 }
