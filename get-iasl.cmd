@@ -1,3 +1,5 @@
+@REM Copyright (c) Microsoft Corporation. All rights reserved.
+@REM SPDX-License-Identifier: BSD-2-Clause-Patent
 @echo off
 setlocal
 set BIN=%~dp0edk2\BaseTools\Bin\Win32

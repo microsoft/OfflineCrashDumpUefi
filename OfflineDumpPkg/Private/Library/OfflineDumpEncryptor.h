@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+
 /*
 Microsoft Offline Dump - Functions for encrypting data for an Offline Dump.
 

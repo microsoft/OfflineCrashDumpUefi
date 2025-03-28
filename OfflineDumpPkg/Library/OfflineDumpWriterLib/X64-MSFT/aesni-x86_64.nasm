@@ -1,3 +1,6 @@
+; Copyright (c) Microsoft Corporation. All rights reserved.
+; SPDX-License-Identifier: BSD-2-Clause-Patent
+
 ; Adapted from openssl/crypto/aes/asm/aesni-x86_64.pl
 
 default rel

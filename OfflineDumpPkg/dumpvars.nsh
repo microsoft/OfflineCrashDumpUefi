@@ -1,3 +1,5 @@
+@REM Copyright (c) Microsoft Corporation. All rights reserved.
+@REM SPDX-License-Identifier: BSD-2-Clause-Patent
 @echo -off
 
 if "%1" == "" or "%1" == "0" then

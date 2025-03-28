@@ -1,7 +1,11 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+
 # Application that writes an offline dump.
 # Obtains dump parameters via LocateProtocol(gOfflineDumpProviderProtocolGuid).
 # Status is reported via DebugLib.
 # Requires RngDxe for secure random numbers.
+
 [Defines]
 
   INF_VERSION                    = 0x00010005

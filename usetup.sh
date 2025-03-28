@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 # This script should be sourced from repo root, not executed.
 # Run: . usetup.sh

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+
 #include <Library/OfflineDumpVariables.h>
 
 #include <Uefi.h>
