@@ -16,6 +16,8 @@
   Collect.c
   Encryptor.c
   RedactionMap.c
+  SecureConfiguration.c
+  SecureConfigurationArm64.c
   Writer.c
 
 [Sources.AARCH64]

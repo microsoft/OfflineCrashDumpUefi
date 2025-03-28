@@ -113,7 +113,7 @@ OfflineDumpRedactionMap_ExposePage (
 /*
 Marks the specified pages as redacted or exposed.
 
-Fails if FirstPageNum >= OfflineDumpRedactionMapMaxPageNumber(pMap)
+Fails if EndPageNum > OfflineDumpRedactionMapMaxPageNumber(pMap)
 or if IsRedacted and map is out of buffer space.
 */
 EFI_STATUS

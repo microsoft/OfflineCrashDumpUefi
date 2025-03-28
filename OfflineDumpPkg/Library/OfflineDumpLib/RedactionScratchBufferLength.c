@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <OfflineDumpLib.h>
+
+#include <Library/OfflineDumpPageSize.h>
 #include <Library/OfflineDumpRedactionMapInternal.h>
 
 #include <Library/DebugLib.h>
 
-#define PAGE_SHIFT           12u
-#define PAGE_SIZE            (1u << PAGE_SHIFT)
 #define CONTEXT_INITIALIZED  0xA1
 
 EFI_STATUS
@@ -64,13 +64,13 @@ OfflineDumpRedactionScratchBufferLength_AddMemRange (
 {
   ASSERT (CONTEXT_INITIALIZED == pContext->Initialized);
 
-  INT64 const  BeginPageNum = BaseAddress >> PAGE_SHIFT;
-  INT64 const  PageCount    = Length >> PAGE_SHIFT;
+  INT64 const  BeginPageNum = BaseAddress >> OD_PAGE_SIZE_SHIFT;
+  INT64 const  PageCount    = Length >> OD_PAGE_SIZE_SHIFT;
   INT64 const  EndPageNum   = BeginPageNum + PageCount;
 
   if ((CONTEXT_INITIALIZED != pContext->Initialized) || // Context not initialized.
-      (0 != (BaseAddress & (PAGE_SIZE - 1))) ||         // BaseAddress not aligned to PAGE_SIZE.
-      (0 != (Length & (PAGE_SIZE - 1)))  ||             // Length not aligned to PAGE_SIZE.
+      (0 != (BaseAddress & (OD_PAGE_SIZE - 1))) ||      // BaseAddress not aligned to OD_PAGE_SIZE.
+      (0 != (Length & (OD_PAGE_SIZE - 1)))  ||          // Length not aligned to OD_PAGE_SIZE.
       (BeginPageNum < pContext->LastPageNum) ||         // Ranges overlap or out of order.
       (EndPageNum > MAX_BITS_PER_TABLE0))               // 56-bit address space limit.
   {
